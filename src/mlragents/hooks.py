@@ -40,16 +40,73 @@ def _target_path(tool_args: dict) -> str | None:
     return None
 
 
-def pre_tool_use(payload: dict, role: str | None = None) -> dict:
-    """Confine the explore role to the explore lane.
+PAPER_SUFFIXES = (".tex", ".bib")
 
-    Deliberately asymmetric: only `explore` is confined. A guardrail that fires
-    during ordinary exploit work would be turned off, and promoting a finding
-    legitimately touches the paper and the shared scaffolding.
+
+def _within(target: Path, root: Path) -> bool:
+    resolved = target.resolve()
+    root = root.resolve()
+    return resolved == root or root in resolved.parents
+
+
+def _explore_verdict(config, target: Path) -> str | None:
+    if "explore" not in config.lanes:
+        return None
+    lane = config.lane_for_path(target)
+    if lane is not None and lane.name == "explore":
+        return None
+    return (
+        f"{target} is outside the explore lane ({config.lane('explore').root}/). "
+        "Exploratory work stays in its own tree so that nothing it produces can "
+        "be cited. To promote a finding, re-run the experiment in the exploit "
+        "lane rather than writing there from an explore session."
+    )
+
+
+def _analysis_verdict(config, target: Path) -> str | None:
+    paper = config.resolve("paper")
+    if _within(target, paper):
+        return None
+    return (
+        f"{target} is outside {config.paths.paper}/. Analysis reads the exploit "
+        "lane and writes only the scripts and artefacts that produce the paper's "
+        "figures and tables. Changing training code here would let a "
+        "disappointing result be fixed upstream of the analysis that found it; "
+        "if the experiment is wrong, re-run it in the experiment role."
+    )
+
+
+def _paper_verdict(config, target: Path) -> str | None:
+    paper = config.resolve("paper")
+    if _within(target, paper) and target.suffix in PAPER_SUFFIXES:
+        return None
+    return (
+        f"{target} is not a .tex or .bib file under {config.paths.paper}/. The "
+        "paper role writes prose and references, nothing else. A quantity in the "
+        "manuscript comes from a macro or table that the analysis role generated, "
+        "so that no number exists which no script produced."
+    )
+
+
+CONFINED_ROLES = {
+    "explore": _explore_verdict,
+    "analysis": _analysis_verdict,
+    "paper": _paper_verdict,
+}
+
+
+def pre_tool_use(payload: dict, role: str | None = None) -> dict:
+    """Confine a role's writes to the tree that role is answerable for.
+
+    `experiment` is deliberately unconfined: a guardrail that fires during
+    ordinary paper-grade work would be turned off, and promoting a finding
+    legitimately touches the shared scaffolding. The other three each have a
+    narrow deliverable, so confinement costs them nothing they should be doing.
     """
     try:
         role = role if role is not None else os.environ.get("MLRAGENTS_ROLE")
-        if role != "explore":
+        verdict = CONFINED_ROLES.get(role or "")
+        if verdict is None:
             return {}
         tool_args = payload.get("toolArgs")
         if payload.get("toolName") not in WRITE_TOOLS or not isinstance(tool_args, dict):
@@ -58,20 +115,14 @@ def pre_tool_use(payload: dict, role: str | None = None) -> dict:
         if target is None:
             return {}
         config = config_module.find_project(Path(payload.get("cwd") or "."))
-        if config is None or "explore" not in config.lanes:
+        if config is None:
             return {}
-        lane = config.lane_for_path(Path(target))
-        if lane is not None and lane.name == "explore":
+        reason = verdict(config, config.root / Path(target))
+        if reason is None:
             return {}
         return {
             "permissionDecision": "deny",
-            "permissionDecisionReason": (
-                f"{target} is outside the explore lane "
-                f"({config.lane('explore').root}/). Exploratory work stays in its "
-                "own tree so that nothing it produces can be cited. To promote a "
-                "finding, re-run the experiment in the exploit lane rather than "
-                "writing there from an explore session."
-            ),
+            "permissionDecisionReason": reason,
         }
     except Exception:
         return {}

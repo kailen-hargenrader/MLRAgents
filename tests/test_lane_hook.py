@@ -125,3 +125,43 @@ def test_dispatch_still_serialises(project):
     data = payload(project, project / "exploit" / "run.py")
     data.pop("_role")
     json.dumps(hooks.dispatch("preToolUse", data, role="explore"))
+
+
+def test_analysis_may_write_under_the_paper_directory(project):
+    assert decide(project, project / "paper" / "figures" / "fig1.py", role="analysis") == {}
+
+
+def test_analysis_may_not_write_training_code(project):
+    decision = decide(project, project / "exploit" / "train.py", role="analysis")
+    assert decision["permissionDecision"] == "deny"
+    assert "paper/" in decision["permissionDecisionReason"]
+
+
+def test_analysis_may_not_write_in_the_explore_lane(project):
+    assert decide(project, project / "explore" / "x.py", role="analysis")
+
+
+def test_paper_may_write_tex(project):
+    assert decide(project, project / "paper" / "main.tex", role="paper") == {}
+
+
+def test_paper_may_write_bib(project):
+    assert decide(project, project / "paper" / "refs.bib", role="paper") == {}
+
+
+def test_paper_may_not_write_a_figure_script(project):
+    decision = decide(project, project / "paper" / "fig1.py", role="paper")
+    assert decision["permissionDecision"] == "deny"
+    assert ".tex" in decision["permissionDecisionReason"]
+
+
+def test_paper_may_not_write_tex_outside_the_paper_directory(project):
+    assert decide(project, project / "exploit" / "notes.tex", role="paper")
+
+
+def test_experiment_is_unconfined(project):
+    assert decide(project, project / "explore" / "x.py", role="experiment") == {}
+
+
+def test_an_unknown_role_is_unconfined(project):
+    assert decide(project, project / "explore" / "x.py", role="wizard") == {}

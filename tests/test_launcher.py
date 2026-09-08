@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from mlragents.config import Lane, ProjectConfig
-from mlragents.launcher import UnknownRole, build_argv, role_env
+from mlragents.launcher import ROLES, UnknownRole, build_argv, role_env
 
 
 def project(tmp_path):
@@ -64,3 +66,27 @@ def test_unknown_role_names_the_known_ones(tmp_path):
     message = str(excinfo.value)
     assert "explore" in message
     assert "experiment" in message
+
+
+def test_analysis_launches_its_own_agent(tmp_path):
+    assert "--agent=mlragents:analysis" in build_argv("analysis", project(tmp_path))
+
+
+def test_analysis_may_not_submit_jobs(tmp_path):
+    """Analysis reads finished runs. Wanting a new one means wanting a new experiment."""
+    argv = build_argv("analysis", project(tmp_path))
+    deny = [a for a in argv if a.startswith("--deny-tool")]
+    assert deny and "sbatch" in deny[0]
+
+
+def test_paper_may_not_submit_jobs(tmp_path):
+    argv = build_argv("paper", project(tmp_path))
+    deny = [a for a in argv if a.startswith("--deny-tool")]
+    assert deny and "sbatch" in deny[0]
+
+
+def test_every_role_names_a_bundled_agent(tmp_path):
+    """A role pointing at a missing agent fails only at launch, in the user's face."""
+    agents = {p.name.removesuffix(".agent.md") for p in Path("agents").glob("*.agent.md")}
+    named = {spec["agent"].split(":", 1)[1] for spec in ROLES.values()}
+    assert named <= agents

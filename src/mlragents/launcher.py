@@ -14,11 +14,17 @@ from mlragents.config import ProjectConfig
 # Scheduler submission is denied to explore at launch rather than in a hook: a
 # queued job outlives the session that created it, so there is no point at which
 # a later check could undo it.
-EXPLORE_DENY = "shell(sbatch:*), shell(srun:*), shell(salloc:*)"
+NO_SCHEDULER = "shell(sbatch:*), shell(srun:*), shell(salloc:*)"
+EXPLORE_DENY = NO_SCHEDULER
 
+# Analysis and paper both work downstream of a finished run. Denying them the
+# scheduler is not distrust; it removes the option of answering "the result is
+# disappointing" by quietly launching something else instead of saying so.
 ROLES = {
     "explore": {"agent": "mlragents:explore", "deny": EXPLORE_DENY},
     "experiment": {"agent": "mlragents:experiment", "deny": None},
+    "analysis": {"agent": "mlragents:analysis", "deny": NO_SCHEDULER},
+    "paper": {"agent": "mlragents:paper", "deny": NO_SCHEDULER},
 }
 
 
