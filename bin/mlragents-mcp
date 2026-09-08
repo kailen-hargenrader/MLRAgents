@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Launch the MCP server however this machine can.
+#
+# Unlike the hook shim, this one must fail loudly: an MCP server that exits 0
+# without speaking the protocol is harder to diagnose than one that reports why
+# it could not start.
+set -eu
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if command -v mlragents-mcp >/dev/null 2>&1; then
+    exec mlragents-mcp "$@"
+fi
+
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --quiet --project "$root" mlragents-mcp "$@"
+fi
+
+echo "mlragents: need either mlragents-mcp on PATH or uv installed" >&2
+exit 1

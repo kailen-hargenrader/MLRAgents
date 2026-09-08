@@ -2,12 +2,8 @@
   "mcpServers": {
     "mlragents": {
       "type": "local",
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/kailen-hargenrader/MLRAgents@v0.1.0",
-        "mlragents-mcp"
-      ],
+      "command": "./bin/mlragents-mcp",
+      "args": [],
       "tools": ["*"]
     }
   }
