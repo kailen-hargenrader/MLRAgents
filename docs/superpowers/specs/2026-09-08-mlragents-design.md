@@ -386,18 +386,21 @@ human-steered loop with mechanical guarantees, not unattended paper generation.
 
 Each phase ends with something usable.
 
-0. **Skeleton and de-risking.** `plugin.json`, `marketplace.json`, one trivial
+0. **Skeleton and de-risking.** *(done)* `plugin.json`, `marketplace.json`, one trivial
    agent, one trivial skill, one `sessionStart` hook that prints a fixed string.
    Verify local install, `-p --agent` loading, hook firing, whether command
    hooks inherit the CLI environment (§3.3), and that `--deny-tool='shell(sbatch:*)'`
    actually blocks. This validates every platform assumption in §2 before any
    real work depends on it.
-1. **Adapter and read-only tools.** `.mlragents.toml`, registry schema,
+1. **Adapter and read-only tools.** *(done)* `.mlragents.toml`, registry schema,
    `runs_*`/`jobs_*`, `mlragents runs sync`, the real `sessionStart` hook.
    Validated against `SURF_2026` without writing to it.
-2. **Agents and skills.** The four agents and the seven skills; used in anger on
+2. **Agents and skills.** *(done — the lane containment
+   hook shipped here rather than in phase 3, because the explore/exploit split
+   is not a convention if nothing enforces it.)* The four agents and the seven skills; used in anger on
    the current paper.
-3. **Guardrails.** The `preToolUse` denials, `postToolUse` provenance recording,
+3. **Guardrails.** *(next)* The remaining `preToolUse` denials — dirty-tree
+   `sbatch`, hand-edits to generated configs — `postToolUse` provenance recording,
    and the `agentStop` numeric audit.
 4. **Paper loop.** `grid_diff`, `paper_build`, `paper_audit_numbers`, and the
    `analysis`/`paper` agents' full workflow.

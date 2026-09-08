@@ -5,12 +5,13 @@ difference between a scratch experiment and one whose numbers may reach a paper,
 backed by tools that read run provenance and cluster state as facts rather than
 guesses.
 
-Status: **foundation complete**, with the explore/exploit structure in place
-(phases 0–1 of the
+Status: **phases 0–2 complete** — foundation, the explore/exploit structure,
+and the four agents with their skill library (see the
 [design spec](docs/superpowers/specs/2026-09-08-mlragents-design.md)). The
 registry, scheduler adapters, session-start context, hook dispatch and MCP
 server work and are verified against a live cluster and a real 65G research
-repository. The skill library is deliberately still thin.
+repository. Phase 3's remaining guardrails — provenance recording on `sbatch`
+and the numeric-literal audit — are not built yet.
 
 ## The structure
 
@@ -47,7 +48,7 @@ are wrong:
 
 | Layer | Lives in | Enforcement |
 |---|---|---|
-| Methodology — how to run an experiment, what to check before launching | `agents/`, `skills/` | Persuasion. The model may disagree. |
+| Methodology — how to run an experiment, what to check before launching | `agents/` (4), `skills/` (7) | Persuasion. The model may disagree. |
 | Tools — run registry, Slurm queue and history, log triage | `src/mlragents/`, exposed over MCP | Tested facts. |
 | Guardrails — what must never happen | `hooks/` | Enforcement. The model gets no vote. |
 
