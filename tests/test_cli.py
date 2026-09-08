@@ -29,3 +29,27 @@ def test_init_refuses_twice(tmp_path, monkeypatch, capsys):
     main(["init", "--name", "demo"])
     assert main(["init", "--name", "demo"]) == 1
     assert "already exists" in capsys.readouterr().err
+
+
+def test_run_prints_the_argv_for_a_role(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    main(["init", "--name", "demo"])
+    capsys.readouterr()
+    assert main(["run", "explore", "--print-argv"]) == 0
+    printed = capsys.readouterr().out
+    assert "--agent=mlragents:explore" in printed
+    assert "sbatch" in printed
+
+
+def test_run_rejects_an_unknown_role(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    main(["init", "--name", "demo"])
+    capsys.readouterr()
+    assert main(["run", "nonsense", "--print-argv"]) == 2
+    assert "known roles" in capsys.readouterr().err
+
+
+def test_run_without_a_project_explains_how_to_start(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", "explore", "--print-argv"]) == 1
+    assert "mlragents init" in capsys.readouterr().err

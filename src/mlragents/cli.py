@@ -9,7 +9,7 @@ from pathlib import Path
 
 import mlragents
 
-KNOWN_COMMANDS = {"hook", "runs", "init"}
+KNOWN_COMMANDS = {"hook", "runs", "init", "run"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,7 +32,39 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--name", default=None, help="project name")
     init_parser.add_argument("--python", default="uv run python")
     init_parser.add_argument("--scheduler", default="slurm")
+    run_parser = subparsers.add_parser(
+        "run", help="start a Copilot session in a role, with that role's limits"
+    )
+    run_parser.add_argument("role", help="explore or experiment")
+    run_parser.add_argument("-p", "--prompt", default=None)
+    run_parser.add_argument("--print-argv", action="store_true")
+    run_parser.add_argument("extra", nargs="*", help="passed through to copilot")
     return parser
+
+
+def _run_role(role: str, prompt: str | None, print_argv: bool, extra: list[str]) -> int:
+    import os
+
+    from mlragents.config import find_project
+    from mlragents.launcher import UnknownRole, build_argv, role_env
+
+    config = find_project(Path.cwd())
+    if config is None:
+        print(
+            "mlragents: no .mlragents.toml found; run `mlragents init` first",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        argv = build_argv(role, config, prompt=prompt, extra=extra)
+    except UnknownRole as exc:
+        print(f"mlragents: {exc}", file=sys.stderr)
+        return 2
+    if print_argv:
+        print(" ".join(argv))
+        return 0
+    os.execvpe(argv[0], argv, role_env(role))
+    return 0
 
 
 def _run_init(name: str | None, python: str, scheduler: str) -> int:
@@ -103,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_sync(args.since)
     if args.command == "init":
         return _run_init(args.name, args.python, args.scheduler)
+    if args.command == "run":
+        return _run_role(args.role, args.prompt, args.print_argv, args.extra)
     parser.print_help()
     return 0
 
