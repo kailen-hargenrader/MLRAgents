@@ -94,6 +94,15 @@ def init_project(
             created.append(readme_path)
     (root / "paper").mkdir(parents=True, exist_ok=True)
 
+    # git does not track directories, so without these the scaffolded structure
+    # does not survive a clone and the layout the whole system describes would
+    # have to be recreated by hand.
+    for empty in ("explore/outputs", "exploit/outputs", "paper"):
+        keep = root / empty / ".gitkeep"
+        if not keep.exists():
+            keep.write_text("")
+            created.append(keep)
+
     config_path.write_text(
         CONFIG_TEMPLATE.format(name=name, python=python, scheduler=scheduler)
     )

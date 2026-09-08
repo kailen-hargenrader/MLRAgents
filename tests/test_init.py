@@ -67,3 +67,25 @@ def test_existing_lane_directories_are_left_alone(tmp_path):
 def test_returns_the_paths_it_created(tmp_path):
     created = init_project(tmp_path, name="demo")
     assert tmp_path / ".mlragents.toml" in created
+
+
+def test_the_scaffolded_structure_survives_a_clone(tmp_path):
+    """git does not track directories; without .gitkeep the layout is lost."""
+    init_project(tmp_path, name="p")
+    for empty in ("explore/outputs", "exploit/outputs", "paper"):
+        assert (tmp_path / empty / ".gitkeep").is_file(), f"{empty} would vanish"
+
+
+def test_the_keepfiles_are_reported_as_created(tmp_path):
+    created = init_project(tmp_path, name="p")
+    names = {p.name for p in created}
+    assert ".gitkeep" in names
+
+
+def test_a_run_directory_is_not_mistaken_for_a_keepfile(tmp_path):
+    """.gitkeep must not make an empty outputs tree look like it holds runs."""
+    from mlragents.config import load
+    from mlragents.sync import discover_outputs
+
+    init_project(tmp_path, name="p")
+    assert discover_outputs(load(tmp_path / ".mlragents.toml")) == []

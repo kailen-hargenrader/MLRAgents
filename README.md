@@ -171,14 +171,14 @@ mlragents --version          # 0.1.0
 To update after a change to this repository:
 
 ```bash
-copilot plugin uninstall mlragents
-copilot plugin marketplace update mlragents
-copilot plugin install mlragents@mlragents
+copilot plugin marketplace update mlragents      # refresh the marketplace clone
+copilot plugin install mlragents@mlragents       # reinstall over the old copy
 uv tool install --force git+ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 ```
 
-The uninstall is needed: `marketplace update` refreshes the marketplace's copy,
-not the installed one.
+Both steps are needed. `marketplace update` refreshes the marketplace's clone
+but does not touch the installed copy; `install` over an existing install
+replaces it without an uninstall.
 
 Direct installs from a local path still work but are deprecated, and they copy
 the directory as-is — including a `.venv` if one is present, which turned a 39M
@@ -207,26 +207,32 @@ paper/
 .gitignore          gains .mlragents/ (the registry is a cache, never committed)
 ```
 
-On a laptop with no cluster, pass `--scheduler none`.
+The empty directories carry a `.gitkeep`, since git does not track directories
+and the layout would otherwise not survive a clone. On a laptop with no cluster,
+pass `--scheduler none`.
 
-**Then edit `.mlragents.toml`.** It is generated with no `[commands]`, and this
-is deliberate: nothing here guesses what your repository means. Declare how your
-project actually runs:
+**Then edit `.mlragents.toml`.** It is generated with an empty `[commands]`, and
+this is deliberate: nothing here guesses what your repository means. Declare how
+your project actually runs.
 
 ```toml
-[commands]
+[paths]
+paper = "paper"
+generated = ["exploit/configs"]      # add: hand-edits here are then refused
+
+[commands]                           # add: all four are optional
 train    = "uv run experiments/run.py --config-name={config}"
 collect  = "uv run scripts/collect_results.py"
 paper    = "latexmk -pdf -cd paper/main.tex"
 generate = "uv run scripts/make_configs.py"
-
-[paths]
-paper = "paper"
-generated = ["exploit/configs"]      # hand-edits here are refused
 ```
 
+Each command is a plain shell string run from the project root, so
+`cd paper && pdflatex -interaction=nonstopmode main.tex` is equally valid — this
+package parses the output and never cares which engine produced it.
+
 A tool that needs an undeclared command fails by naming the missing key and the
-file to add it to — it never guesses a command that might work. Start from
+file to add it to; it never guesses a command that might work. Start from
 [`examples/surf-2026.mlragents.toml`](examples/surf-2026.mlragents.toml), a
 working adapter for a Hydra + uv + W&B + Slurm project, and see
 [`docs/mlragents-toml.md`](docs/mlragents-toml.md) for every key.
@@ -237,6 +243,11 @@ Commit the scaffold, then work in a role:
 git add -A && git commit -m "mlragents structure"
 mlragents run explore
 ```
+
+The first thing you should see is the session fact block — project name, branch,
+whether the tree is dirty, and your actual cluster queue. If it is missing, the
+hooks are not loading; check `copilot plugin list` and that `uv` or `mlragents`
+is on `PATH`.
 
 Adopting an existing repository is the same, minus `git init`. Point the lanes
 at the directories you already have, and run `mlragents runs sync` once to
