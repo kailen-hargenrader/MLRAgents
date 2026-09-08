@@ -1,13 +1,20 @@
+# A real adapter, for a repository that predates the explore/exploit split.
+#
+# SURF_2026 keeps all of its experiments in one tree, so it declares a single
+# exploit lane rooted at the repository itself: everything there is already
+# paper-grade. A repository that has not yet separated the two is better
+# described this way than by pretending an explore lane exists.
+
 [project]
 name = "surf-2026"
 python = "uv run python"
 
 [paths]
-outputs = "outputs"
-configs = "configs"
 paper = "paper"
-scratch = "scratch"
-protected = ["src", "experiments", "configs"]
+
+[exploit]
+root = "."
+outputs = "outputs"
 # Hydra writes outputs/<date>/<experiment>/[<cell>/...]/<time>. The date is not
 # a label, so it is skipped; the shallow pattern is first so a run with no cell
 # does not get its timestamp recorded as one.

@@ -16,11 +16,17 @@ name = "surf-2026"
 python = "uv run python"
 
 [paths]
-outputs = "outputs"
-configs = "configs"
 paper = "paper"
-scratch = "scratch"
-protected = ["src", "experiments", "configs"]
+
+# Insight. Never cited.
+[explore]
+root = "explore"
+outputs = "outputs"
+
+# Evidence. Everything in the paper comes from here.
+[exploit]
+root = "exploit"
+outputs = "outputs"
 run_pattern = ["*/{grid}/*", "*/{grid}/{cell}/**"]
 
 [scheduler]
@@ -53,45 +59,39 @@ Paths are relative to the directory holding `.mlragents.toml`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `outputs` | `"outputs"` | Root of the run artefact tree. Scanned by `mlragents runs sync`. |
-| `configs` | `"configs"` | Root of the experiment configuration tree. |
 | `paper` | `"paper"` | Manuscript sources, figures and generated tables. |
-| `scratch` | `"scratch"` | Writable sandbox for exploratory work. |
-| `protected` | `[]` | The main pipeline. Exploratory work must not modify these. |
-| `run_pattern` | none | How to read experiment labels out of a run's path. See below. |
 
-#### `run_pattern`
+### `[explore]` and `[exploit]`
 
-`mlragents runs sync` records the path of every run it finds, but it will not
-guess what the components of that path mean. A directory named `2026-08-23` is a
-Hydra date, not an experiment; only the repository knows the difference. So a
-run is labelled with a `grid` and a `cell` only if this key says how to find
-them.
+The two experiment lanes. Their names are fixed, because the names carry meaning
+the system enforces: a quantity in the paper must resolve to an `exploit` run,
+and an `explore` run is never evidence. Only where the trees live is
+configurable.
 
-A pattern is matched against the run's path relative to `outputs`:
-
-| Segment | Matches |
-|---|---|
-| `{grid}`, `{cell}` | One component, recorded under that name. |
-| `*` | Exactly one component, discarded. |
-| `**` | Any number of components, discarded. Must be last. |
-| anything else | Itself, literally. |
-
-Without a trailing `**`, a pattern matches only paths of exactly its length.
-A pattern that does not match yields no labels at all — an absent label is
-better than a wrong one.
-
-Give a list to handle a tree whose runs sit at different depths. Patterns are
-tried in order and the first match wins, so put the most specific first:
+Declare both, or declare only one. A repository that has not separated the two
+declares a single lane rooted at itself:
 
 ```toml
-run_pattern = ["*/{grid}/*", "*/{grid}/{cell}/**"]
+[exploit]
+root = "."
 ```
 
-against Hydra's `outputs/<date>/<experiment>/[<cell>/…]/<time>` skips the date,
-takes the experiment as the grid, and leaves `cell` empty for the shallow runs
-that have none — rather than recording their timestamp as a cell.
+| Key | Default | Meaning |
+|---|---|---|
+| `root` | the lane's name | The lane's tree, relative to the project root. |
+| `outputs` | `"outputs"` | Run artefacts, relative to `root`. Scanned by `mlragents runs sync`. |
+| `run_pattern` | none | How to read experiment labels out of a run's path. See below. |
 
+Run ids are qualified by lane — `exploit/ablation/softmax/01-00-00` — so that
+two lanes cannot collide on an identical relative path, and so that a citation
+carries the lane it came from.
+
+Only the `explore` lane is confined. A `preToolUse` hook refuses writes outside
+it when the session runs in the explore role, and `mlragents run explore` denies
+scheduler submission at launch. The exploit lane is deliberately unguarded: a
+guardrail that fires during ordinary paper work would be turned off.
+
+#### `run_pattern`
 ### `[scheduler]`
 
 | Key | Default | Meaning |
@@ -118,7 +118,7 @@ are substituted by the caller. Keys used so far:
 
 ## Unknown sections
 
-Sections other than the five above are preserved verbatim on
+Sections other than those above are preserved verbatim on
 `ProjectConfig.extra`. Adding project-specific configuration is safe; it will
 not be rejected, and it survives a round trip.
 
