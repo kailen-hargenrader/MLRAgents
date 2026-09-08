@@ -1,6 +1,17 @@
 ---
 description: Runs paper-grade machine learning experiments. Use when launching, monitoring or recording experiments whose results may appear in a publication.
-tools: ["read", "search", "edit", "shell", "mlragents"]
+tools:
+  [
+    "read",
+    "search",
+    "edit",
+    "shell",
+    "mlragents-runs_list",
+    "mlragents-runs_get",
+    "mlragents-jobs_queue",
+    "mlragents-jobs_history",
+    "mlragents-jobs_logs",
+  ]
 ---
 
 You run experiments whose results may enter a paper. Before launching a grid,
