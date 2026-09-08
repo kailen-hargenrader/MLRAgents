@@ -182,3 +182,25 @@ def test_there_were_undefined_references_summary_line_is_caught(config):
     log = "LaTeX Warning: There were undefined references."
     result = paper.build(config, run=fake_run(log), read_log=False)
     assert result.ok is False
+
+
+def test_the_tally_line_is_redundant_once_items_are_named(config):
+    """Real pdflatex output: naming fig:absent already said what the tally says."""
+    log = "\n".join(
+        [
+            "LaTeX Warning: Reference `fig:absent' on page 1 undefined on input line 4.",
+            "LaTeX Warning: There were undefined references.",
+        ]
+    )
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.undefined_references == ["fig:absent"]
+    assert result.unparsed_undefined == []
+    assert result.ok is False
+
+
+def test_the_tally_line_alone_is_still_evidence(config):
+    """With nothing named, the tally is all there is, and it must not be dropped."""
+    log = "LaTeX Warning: There were undefined references."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.unparsed_undefined == [log]
+    assert result.ok is False

@@ -41,6 +41,9 @@ off.
 mlragents init          # scaffold explore/, exploit/, paper/ and the adapter
 ```
 
+See [Starting a new project](#starting-a-new-project) for the full walkthrough
+from an empty directory.
+
 ## What it is
 
 Three layers, separated by how often they change and by what happens when they
@@ -106,17 +109,76 @@ allowlists would route straight around that.
 two places support no claim about either, and that is not visible by reading
 two YAML files side by side.
 
+## Requirements
+
+| | Needed for | If absent |
+|---|---|---|
+| **GitHub Copilot CLI** | everything — this is a plugin, not a standalone tool | nothing loads |
+| **git** | all provenance. A run's commit is the thing that makes it citable | `jobs_submit` refuses; the session fact block omits the branch |
+| **`uv`** *(or `mlragents` on `PATH`)* | the hook and MCP shims, which run the Python package | hooks silently no-op; the MCP server fails to start |
+| Slurm — `sbatch`, `squeue`, `sacct` | only when `scheduler.kind = "slurm"` | set `kind = "none"`; the `jobs_*` tools and the dirty-tree gate stand down |
+| A LaTeX toolchain | only via `commands.paper` | `paper_build` reports the command's failure |
+
+Python is supplied by `uv` (≥ 3.11). Nothing else is required. Verified against
+Copilot CLI 1.0.83; the plugin uses agents, skills, hooks and MCP, so any
+version supporting those should work.
+
+**No VS Code extension is involved.** This is a terminal plugin for Copilot CLI;
+it has no editor component, and installing anything in VS Code does not affect
+it.
+
+**The LaTeX dependency is indirect.** This package never invokes a LaTeX engine.
+It runs whatever string you put in `commands.paper` — `latexmk -pdf main.tex`,
+`tectonic main.tex`, `bash scripts/build_paper.sh` — and parses the output. Any
+engine works, and if you do not write papers you can leave the key out; only
+`paper_build` needs it.
+
+`tracker.kind` is parsed and preserved, but **no tool acts on it yet**. W&B and
+MLflow are not currently required or used.
+
 ## Install
 
+Two steps, because they install different things. The plugin gives Copilot the
+agents, skills, hooks and MCP tools. The CLI gives *you* `mlragents init` and
+`mlragents run`.
+
 ```bash
+# 1. the plugin (agents, skills, hooks, MCP server)
 copilot plugin marketplace add ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 copilot plugin install mlragents@mlragents
+
+# 2. the command line tool
+uv tool install git+ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 ```
 
-The SSH URL is load-bearing: this repository is private, and the `owner/repo`
+The SSH URLs are load-bearing: this repository is private, and the `owner/repo`
 shorthand resolves to an anonymous HTTPS `git clone`, which cannot authenticate
 (`fatal: could not read Username for 'https://github.com'`). The `ssh://` form
 uses your existing key.
+
+Step 2 is not optional in practice. A plugin install only copies the tree into
+Copilot's plugin directory; it puts nothing on your `PATH`, so `mlragents init`
+would be "command not found". Installing the CLI also makes the shims faster:
+they prefer `mlragents` on `PATH` and fall back to `uv run` otherwise.
+
+Check both:
+
+```bash
+copilot plugin list          # mlragents@mlragents
+mlragents --version          # 0.1.0
+```
+
+To update after a change to this repository:
+
+```bash
+copilot plugin uninstall mlragents
+copilot plugin marketplace update mlragents
+copilot plugin install mlragents@mlragents
+uv tool install --force git+ssh://git@github.com/kailen-hargenrader/MLRAgents.git
+```
+
+The uninstall is needed: `marketplace update` refreshes the marketplace's copy,
+not the installed one.
 
 Direct installs from a local path still work but are deprecated, and they copy
 the directory as-is — including a `.venv` if one is present, which turned a 39M
@@ -125,15 +187,68 @@ checkout into 170M. A marketplace install of the same tree is 401K.
 The bundled MCP server runs through `uv`, so the first tool call after a fresh
 install pays ~8s to build the plugin's virtualenv. Subsequent calls are fast.
 
-Then, in a research repository, create `.mlragents.toml`. Start from
+## Starting a new project
+
+From an empty directory:
+
+```bash
+mkdir thermo-paper && cd thermo-paper
+git init
+mlragents init --name thermo-paper
+```
+
+`init` is not a template. It writes only the structure the guardrails depend on:
+
+```
+explore/outputs/    explore/README.md    what this lane means, so the distinction
+exploit/outputs/    exploit/README.md    does not live only in your memory
+paper/
+.mlragents.toml     the adapter — the one file you must edit
+.gitignore          gains .mlragents/ (the registry is a cache, never committed)
+```
+
+On a laptop with no cluster, pass `--scheduler none`.
+
+**Then edit `.mlragents.toml`.** It is generated with no `[commands]`, and this
+is deliberate: nothing here guesses what your repository means. Declare how your
+project actually runs:
+
+```toml
+[commands]
+train    = "uv run experiments/run.py --config-name={config}"
+collect  = "uv run scripts/collect_results.py"
+paper    = "latexmk -pdf -cd paper/main.tex"
+generate = "uv run scripts/make_configs.py"
+
+[paths]
+paper = "paper"
+generated = ["exploit/configs"]      # hand-edits here are refused
+```
+
+A tool that needs an undeclared command fails by naming the missing key and the
+file to add it to — it never guesses a command that might work. Start from
 [`examples/surf-2026.mlragents.toml`](examples/surf-2026.mlragents.toml), a
-working adapter for a Hydra + uv + W&B + Slurm project.
+working adapter for a Hydra + uv + W&B + Slurm project, and see
+[`docs/mlragents-toml.md`](docs/mlragents-toml.md) for every key.
+
+Commit the scaffold, then work in a role:
+
+```bash
+git add -A && git commit -m "mlragents structure"
+mlragents run explore
+```
+
+Adopting an existing repository is the same, minus `git init`. Point the lanes
+at the directories you already have, and run `mlragents runs sync` once to
+populate the registry from your existing outputs.
 
 ## Use
 
 ```bash
 mlragents run explore      # cheap model, confined to explore/, no sbatch
 mlragents run experiment   # the exploit lane: paper-grade runs
+mlragents run analysis     # figures, tables and macros from finished runs
+mlragents run paper        # .tex and .bib only
 ```
 
 Each launches Copilot CLI with that role's agent and limits, and exports
@@ -141,6 +256,10 @@ Each launches Copilot CLI with that role's agent and limits, and exports
 is `copilot --agent=mlragents:experiment`; the `mlragents:` prefix is required,
 since plugin agents are namespaced and `--agent=experiment` fails with "No such
 agent".
+
+You can also run plain `copilot` and switch with `/agent`, or let it delegate by
+intent. You lose the launch-time denials that way — `mlragents run` is what
+applies `--deny-tool`, and no hook can undo a job that has already been queued.
 
 Every session opens with a fact block: the current branch, whether the tree is
 dirty, and what is actually running on the cluster. It is injected by a

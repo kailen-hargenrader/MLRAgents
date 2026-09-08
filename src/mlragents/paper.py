@@ -30,6 +30,10 @@ MISSING_FILE = re.compile(r"^! LaTeX Error: File [`'\"]([^'\"]+)' not found", re
 UNDEFINED_LINE = re.compile(
     r"^.*(?:Warning|Error).*undefined.*$", re.MULTILINE | re.IGNORECASE
 )
+# LaTeX's own end-of-run tally. It restates what the per-item warnings already
+# said, so it is redundant once those have been named — but if nothing was
+# named, it is the only evidence there was, and the backstop must keep it.
+SUMMARY_UNDEFINED = re.compile(r"There were undefined (references|citations)")
 TAIL_LINES = 40
 
 
@@ -115,6 +119,7 @@ def parse(text: str) -> dict[str, list[str]]:
         line.strip()
         for line in _unique(m.strip() for m in UNDEFINED_LINE.findall(text))
         if not any(key in line for key in named)
+        and not (named and SUMMARY_UNDEFINED.search(line))
     ]
     return {
         "errors": _unique(m.strip() for m in ERROR.findall(text)),

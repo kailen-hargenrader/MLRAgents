@@ -40,14 +40,15 @@ def session_context(
         )
         lines.append(f"git: {git_state.branch} @ {(git_state.sha or '')[:8]} ({tree})")
 
-    if jobs:
-        lines.append(f"slurm ({user}): {len(jobs)} job(s)")
-        for job in jobs[:RECENT_RUN_LIMIT]:
-            lines.append(
-                f"  {job.job_id} {job.name} {job.state} {job.elapsed} {job.node}"
-            )
-    else:
-        lines.append(f"slurm ({user}): no jobs queued")
+    if config.scheduler_kind == "slurm":
+        if jobs:
+            lines.append(f"slurm ({user}): {len(jobs)} job(s)")
+            for job in jobs[:RECENT_RUN_LIMIT]:
+                lines.append(
+                    f"  {job.job_id} {job.name} {job.state} {job.elapsed} {job.node}"
+                )
+        else:
+            lines.append(f"slurm ({user}): no jobs queued")
 
     if runs:
         lines.append(f"recent runs (last {len(runs)}):")
