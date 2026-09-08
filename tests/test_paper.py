@@ -142,3 +142,43 @@ def test_as_dict_is_json_safe(config):
 
     result = paper.build(config, run=fake_run("ok"), read_log=False)
     json.dumps(result.as_dict())
+
+
+# --- the backstop -----------------------------------------------------------
+# Found live: paper_build reported ok=True while its own log tail contained
+# "Citation `ghost2024 undefined". A named pattern had not matched, so nothing
+# was reported — the exact silent failure this tool exists to prevent.
+
+
+def test_an_undefined_line_no_pattern_names_still_fails_the_build(config):
+    log = "LaTeX Warning: Citation `ghost2024 undefined."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.ok is False
+    assert result.unparsed_undefined == [log]
+    assert "could not name" in result.summary()
+
+
+def test_a_named_citation_is_not_also_reported_as_unparsed(config):
+    log = "LaTeX Warning: Citation `vaswani2017' on page 2 undefined on input line 9."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.undefined_citations == ["vaswani2017"]
+    assert result.unparsed_undefined == []
+
+
+def test_a_named_reference_is_not_also_reported_as_unparsed(config):
+    log = "LaTeX Warning: Reference `fig:loss' on page 3 undefined on input line 8."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.unparsed_undefined == []
+
+
+def test_an_unrelated_mention_of_undefined_does_not_fail_the_build(config):
+    """The backstop keys on a warning or error, not on the word alone."""
+    log = "Package foo: behaviour for undefined keys is documented in the manual."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.ok is True
+
+
+def test_there_were_undefined_references_summary_line_is_caught(config):
+    log = "LaTeX Warning: There were undefined references."
+    result = paper.build(config, run=fake_run(log), read_log=False)
+    assert result.ok is False

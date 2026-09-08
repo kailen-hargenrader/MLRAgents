@@ -22,6 +22,14 @@ UNDEFINED_CITATION = re.compile(r"Citation [`'\"]([^'\"]+)' on page [^ ]+ undefi
 # Some engines omit the page for citations entirely.
 BARE_CITATION = re.compile(r"Citation [`'\"]([^'\"]+)' undefined")
 MISSING_FILE = re.compile(r"^! LaTeX Error: File [`'\"]([^'\"]+)' not found", re.MULTILINE)
+# A backstop. The patterns above name what is wrong, which is what makes a
+# result actionable — but a log line saying something is undefined must never
+# be reported as a clean build just because no pattern happened to match its
+# phrasing. Engines vary, and a false "ok" here is the exact silent failure
+# this tool exists to prevent.
+UNDEFINED_LINE = re.compile(
+    r"^.*(?:Warning|Error).*undefined.*$", re.MULTILINE | re.IGNORECASE
+)
 TAIL_LINES = 40
 
 
@@ -34,6 +42,7 @@ class BuildResult:
     undefined_references: list[str] = field(default_factory=list)
     undefined_citations: list[str] = field(default_factory=list)
     missing_files: list[str] = field(default_factory=list)
+    unparsed_undefined: list[str] = field(default_factory=list)
     log_tail: str = ""
     log_path: str | None = None
 
@@ -46,6 +55,7 @@ class BuildResult:
             "undefined_references": self.undefined_references,
             "undefined_citations": self.undefined_citations,
             "missing_files": self.missing_files,
+            "unparsed_undefined": self.unparsed_undefined,
             "log_tail": self.log_tail,
             "log_path": self.log_path,
             "summary": self.summary(),
@@ -65,6 +75,11 @@ class BuildResult:
             parts.append(
                 f"{len(self.undefined_citations)} undefined citation(s) — "
                 "each is a claim with no source behind it"
+            )
+        if self.unparsed_undefined:
+            parts.append(
+                f"{len(self.unparsed_undefined)} log line(s) reporting something "
+                "undefined in a form this tool could not name; read log_tail"
             )
         if not parts:
             parts.append(f"the build command exited {self.returncode}")
@@ -93,12 +108,20 @@ def newest_log(paper_dir: Path) -> Path | None:
 
 
 def parse(text: str) -> dict[str, list[str]]:
-    citations = UNDEFINED_CITATION.findall(text) + BARE_CITATION.findall(text)
+    citations = _unique(UNDEFINED_CITATION.findall(text) + BARE_CITATION.findall(text))
+    references = _unique(UNDEFINED_REFERENCE.findall(text))
+    named = set(citations) | set(references)
+    unparsed = [
+        line.strip()
+        for line in _unique(m.strip() for m in UNDEFINED_LINE.findall(text))
+        if not any(key in line for key in named)
+    ]
     return {
         "errors": _unique(m.strip() for m in ERROR.findall(text)),
-        "undefined_references": _unique(UNDEFINED_REFERENCE.findall(text)),
-        "undefined_citations": _unique(citations),
+        "undefined_references": references,
+        "undefined_citations": citations,
         "missing_files": _unique(MISSING_FILE.findall(text)),
+        "unparsed_undefined": unparsed,
     }
 
 
