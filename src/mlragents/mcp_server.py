@@ -37,13 +37,36 @@ def _registry(config: ProjectConfig) -> Registry | None:
 
 
 def runs_list(
-    cwd: str, limit: int = 20, grid: str | None = None, status: str | None = None
+    cwd: str,
+    limit: int = 20,
+    grid: str | None = None,
+    status: str | None = None,
+    lane: str | None = None,
 ) -> list[dict]:
-    """List recorded runs, newest first."""
+    """List recorded runs, newest first.
+
+    Pass lane="exploit" for runs that may be cited in the paper. Runs in the
+    explore lane are insight only and must never appear in a manuscript.
+    """
     registry = _registry(_project(cwd))
     if registry is None:
         return []
-    return [asdict(run) for run in registry.list(limit=limit, grid=grid, status=status)]
+    runs = registry.list(limit=limit, grid=grid, status=status, lane=lane)
+    return [asdict(run) for run in runs]
+
+
+def lanes_list(cwd: str) -> list[dict]:
+    """The experiment lanes this repository declares, and which may be cited."""
+    config = _project(cwd)
+    return [
+        {
+            "name": lane.name,
+            "root": str(lane.dir(config.root)),
+            "outputs_dir": str(lane.outputs_dir(config.root)),
+            "citable": lane.name == "exploit",
+        }
+        for lane in config.lanes.values()
+    ]
 
 
 def runs_get(cwd: str, run_id: str) -> dict | None:
@@ -88,7 +111,7 @@ def jobs_logs(cwd: str, job_id: str, lines: int = 40) -> dict:
     }
 
 
-TOOLS = [runs_list, runs_get, jobs_queue, jobs_history, jobs_logs]
+TOOLS = [runs_list, runs_get, lanes_list, jobs_queue, jobs_history, jobs_logs]
 
 
 def build_server():
