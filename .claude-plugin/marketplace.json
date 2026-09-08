@@ -1,0 +1,12 @@
+{
+  "name": "mlragents",
+  "owner": { "name": "Kailen Hargenrader" },
+  "plugins": [
+    {
+      "name": "mlragents",
+      "source": "./",
+      "description": "Agents, skills and tools for machine learning research.",
+      "version": "0.1.0"
+    }
+  ]
+}

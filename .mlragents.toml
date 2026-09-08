@@ -1,0 +1,17 @@
+[project]
+name = "mlragents"
+python = "uv run python"
+
+[paths]
+outputs = "outputs"
+configs = "configs"
+paper = "paper"
+scratch = "scratch"
+protected = ["src"]
+
+[scheduler]
+kind = "slurm"
+log_dir = "slurm_logs"
+
+[commands]
+test = "uv run pytest"

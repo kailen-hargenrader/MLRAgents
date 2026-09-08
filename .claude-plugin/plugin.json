@@ -1,0 +1,11 @@
+{
+  "name": "mlragents",
+  "description": "Agents, skills and tools for machine learning research: run provenance, cluster state, and reproducible papers.",
+  "version": "0.1.0",
+  "author": { "name": "Kailen Hargenrader" },
+  "repository": "https://github.com/kailen-hargenrader/MLRAgents",
+  "license": "MIT",
+  "keywords": ["research", "machine-learning", "slurm", "reproducibility"],
+  "agents": "agents/",
+  "hooks": "hooks/hooks.json"
+}

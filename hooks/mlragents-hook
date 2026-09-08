@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Thin shim. All logic lives in Python so it is unit-testable.
+# Never fail: a broken hook must not break a session, so every path ends by
+# printing valid JSON and exiting 0.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+out=""
+
+if command -v mlragents >/dev/null 2>&1; then
+    out="$(mlragents hook "$1" 2>/dev/null)" || out=""
+elif command -v uv >/dev/null 2>&1; then
+    out="$(uv run --directory "$root" mlragents hook "$1" 2>/dev/null)" || out=""
+fi
+
+[ -n "$out" ] || out='{}'
+printf '%s\n' "$out"
+exit 0

@@ -32,9 +32,16 @@ Verified against GitHub Copilot CLI v1.0.83 documentation (2026-09-08):
   servers.
 - Install: `copilot plugin install OWNER/REPO`, or via a marketplace declared by
   `marketplace.json` in the same repository. Updates: `copilot plugin update`.
-  Installs land in `~/.copilot/installed-plugins/MARKETPLACE/PLUGIN`. Local path
-  installs load live from disk, which makes development iteration cheap.
+  Installs land in `~/.copilot/installed-plugins/MARKETPLACE/PLUGIN`.
+  **Direct installs from a repo, URL or local path are deprecated**; only
+  `plugin@marketplace` installs will be supported in a future release, so the
+  marketplace manifest is mandatory rather than a convenience. **A local-path
+  install copies the whole tree** (it ignores `.gitignore` and will happily
+  copy a virtualenv), so development uses `copilot --plugin-dir PATH`, which
+  loads the working tree live with no install step. Both verified 2026-09-08.
 - **Agents** are `*.agent.md`; the filename minus the extension is the id.
+  **For agents contributed by a plugin the id is `<plugin>:<filename>`** — a
+  bare id is rejected (verified 2026-09-08; the documentation omits this).
   Frontmatter: `name`, `description` (required), `target`, `tools`, `model`
   (may be an ordered list; `model-policy: required` pins it),
   `disable-model-invocation`, `user-invocable`, `mcp-servers`, `metadata`.
@@ -176,21 +183,23 @@ channel of its own. Two mechanisms, used together:
 [prompt]`, invokes the CLI with the filters that express the role:
 
 ```
-copilot --agent=explore -p "..." \
+copilot --agent=mlragents:explore -p "..." \
         --add-dir "$(mlragents path scratch)" \
         --deny-tool='shell(sbatch:*), shell(srun:*)'
 ```
 
 This is the load-bearing mechanism: it is documented, deterministic, and needs
-no hook. Interactive `/agent explore` inside an unrestricted session gets the
-prompt-level rules but not the hard filters, and the agent bodies say so.
+no hook. **Verified 2026-09-08**: `--deny-tool='shell(sbatch:*)'` blocks the
+call, the model is told why, and it cannot proceed. Interactive
+`/agent mlragents:explore` inside an unrestricted session gets the prompt-level
+rules but not the hard filters, and the agent bodies say so.
 
 **Role hint via environment.** The launcher exports `MLRAGENTS_ROLE`, which hook
 processes read to refine messages and to catch the cases filters cannot express
-(for example, "this `sbatch` targets a main-grid config"). Whether command hooks
-inherit the CLI's environment is **unverified** and is a phase 0 check; if they
-do not, the launcher writes the role to `.mlragents/session/<sessionId>.json`
-instead, keyed by the `sessionId` present in every payload.
+(for example, "this `sbatch` targets a main-grid config"). **Verified
+2026-09-08**: command hooks inherit the CLI process environment, so the
+environment is the mechanism and the previously specified
+`.mlragents/session/<sessionId>.json` fallback is unnecessary.
 
 Guardrails that hold regardless of role — dirty-tree submission, hand-edited
 generated configs, provenance recording, the numeric audit — need neither
