@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from mlragents.config import ProjectConfig
+from mlragents.config import Lane, ProjectConfig
 from mlragents.registry import Registry, Run, default_path
 from mlragents.scheduler.slurm import Job
 
@@ -58,10 +58,22 @@ def match_pattern(parts: tuple[str, ...], pattern: str) -> dict[str, str]:
 
 
 def discover_outputs(config: ProjectConfig) -> list[Run]:
-    outputs_root = config.resolve("outputs")
+    """Every run in every declared lane, tagged with the lane it came from.
+
+    The lane is read from the filesystem rather than from anything a model
+    asserts, which is what makes it usable as evidence.
+    """
+    runs = []
+    for lane in config.lanes.values():
+        runs.extend(_discover_lane(config, lane))
+    return runs
+
+
+def _discover_lane(config: ProjectConfig, lane: Lane) -> list[Run]:
+    outputs_root = lane.outputs_dir(config.root)
     if not outputs_root.is_dir():
         return []
-    pattern = config.paths.run_pattern
+    pattern = lane.run_pattern
     patterns = [pattern] if isinstance(pattern, str) else list(pattern or ())
     runs = []
     for path in _walk_visible(outputs_root):
@@ -75,7 +87,10 @@ def discover_outputs(config: ProjectConfig) -> list[Run]:
                 break
         runs.append(
             Run(
-                run_id=relative.as_posix(),
+                # Lane-qualified, so the same relative path in both trees cannot
+                # collide and the lane of a cited run is visible in its id.
+                run_id=f"{lane.name}/{relative.as_posix()}",
+                lane=lane.name,
                 grid=labels.get("grid"),
                 cell=labels.get("cell"),
                 outputs_path=str(path),

@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 CONFIG_NAME = ".mlragents.toml"
-KNOWN_SECTIONS = {"project", "paths", "scheduler", "tracker", "commands"}
+LANE_NAMES = ("explore", "exploit")
+KNOWN_SECTIONS = {"project", "paths", "scheduler", "tracker", "commands", *LANE_NAMES}
 
 
 class MissingCommand(KeyError):
@@ -21,12 +22,27 @@ class MissingCommand(KeyError):
 
 @dataclass(frozen=True)
 class Paths:
-    outputs: str = "outputs"
-    configs: str = "configs"
     paper: str = "paper"
-    scratch: str = "scratch"
-    protected: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Lane:
+    """One of the two experiment trees.
+
+    The names are fixed because they carry meaning the system enforces: an
+    `explore` run is never evidence. Only where the trees live is configurable.
+    """
+
+    name: str
+    root: str
+    outputs: str = "outputs"
     run_pattern: str | list[str] | None = None
+
+    def dir(self, project_root: Path) -> Path:
+        return (Path(project_root) / self.root).resolve()
+
+    def outputs_dir(self, project_root: Path) -> Path:
+        return self.dir(project_root) / self.outputs
 
 
 @dataclass(frozen=True)
@@ -35,6 +51,7 @@ class ProjectConfig:
     name: str = "unnamed"
     python: str = "python"
     paths: Paths = field(default_factory=Paths)
+    lanes: dict[str, Lane] = field(default_factory=dict)
     scheduler_kind: str = "none"
     scheduler_log_dir: str = "slurm_logs"
     tracker_kind: str = "none"
@@ -50,6 +67,34 @@ class ProjectConfig:
                 f"add it to {self.root / CONFIG_NAME}"
             ) from exc
 
+    def lane(self, name: str) -> Lane:
+        try:
+            return self.lanes[name]
+        except KeyError as exc:
+            declared = ", ".join(sorted(self.lanes)) or "none"
+            raise KeyError(
+                f"{CONFIG_NAME} declares no lane {name!r}; declared lanes: {declared}"
+            ) from exc
+
+    def lane_for_path(self, path: Path) -> Lane | None:
+        """Which lane contains `path`, or None.
+
+        Resolved before comparison so that a path traversing `..` is attributed
+        to where it actually lands, not to where it appears to start. The
+        longest matching root wins, so a lane nested inside a root-level lane is
+        reported rather than its container.
+        """
+        target = (self.root / Path(path)).resolve()
+        best: Lane | None = None
+        best_depth = -1
+        for lane in self.lanes.values():
+            lane_dir = lane.dir(self.root)
+            if target == lane_dir or lane_dir in target.parents:
+                depth = len(lane_dir.parts)
+                if depth > best_depth:
+                    best, best_depth = lane, depth
+        return best
+
     def resolve(self, path_name: str) -> Path:
         return self.root / getattr(self.paths, path_name)
 
@@ -64,14 +109,17 @@ def load(path: Path) -> ProjectConfig:
         root=path.parent,
         name=project.get("name", "unnamed"),
         python=project.get("python", "python"),
-        paths=Paths(
-            outputs=paths.get("outputs", "outputs"),
-            configs=paths.get("configs", "configs"),
-            paper=paths.get("paper", "paper"),
-            scratch=paths.get("scratch", "scratch"),
-            protected=tuple(paths.get("protected", ())),
-            run_pattern=paths.get("run_pattern"),
-        ),
+        paths=Paths(paper=paths.get("paper", "paper")),
+        lanes={
+            name: Lane(
+                name=name,
+                root=data[name].get("root", name),
+                outputs=data[name].get("outputs", "outputs"),
+                run_pattern=data[name].get("run_pattern"),
+            )
+            for name in LANE_NAMES
+            if name in data
+        },
         scheduler_kind=scheduler.get("kind", "none"),
         scheduler_log_dir=scheduler.get("log_dir", "slurm_logs"),
         tracker_kind=tracker.get("kind", "none"),

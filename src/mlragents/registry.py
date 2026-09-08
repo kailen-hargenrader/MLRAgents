@@ -13,6 +13,7 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id       TEXT PRIMARY KEY,
+    lane         TEXT,
     grid         TEXT,
     cell         TEXT,
     config_path  TEXT,
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS runs (
     outputs_path TEXT,
     tracker_url  TEXT
 );
+CREATE INDEX IF NOT EXISTS runs_lane ON runs(lane);
 CREATE INDEX IF NOT EXISTS runs_job_id ON runs(job_id);
 CREATE INDEX IF NOT EXISTS runs_submitted_at ON runs(submitted_at DESC);
 """
@@ -36,6 +38,7 @@ CREATE INDEX IF NOT EXISTS runs_submitted_at ON runs(submitted_at DESC);
 @dataclass
 class Run:
     run_id: str
+    lane: str | None = None
     grid: str | None = None
     cell: str | None = None
     config_path: str | None = None
@@ -100,8 +103,12 @@ class Registry:
         limit: int = 20,
         grid: str | None = None,
         status: str | None = None,
+        lane: str | None = None,
     ) -> list[Run]:
         clauses, params = [], []
+        if lane is not None:
+            clauses.append("lane = ?")
+            params.append(lane)
         if grid is not None:
             clauses.append("grid = ?")
             params.append(grid)

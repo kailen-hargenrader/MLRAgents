@@ -79,3 +79,23 @@ def test_get_missing_returns_none(tmp_path):
 def test_opening_twice_is_safe(tmp_path):
     make_registry(tmp_path).record(Run(run_id="r1"))
     assert make_registry(tmp_path).get("r1").run_id == "r1"
+
+
+def test_lane_round_trips(tmp_path):
+    registry = Registry(tmp_path / "r.sqlite")
+    registry.record(Run(run_id="exploit/a", lane="exploit"))
+    assert registry.get("exploit/a").lane == "exploit"
+
+
+def test_list_filters_by_lane(tmp_path):
+    registry = Registry(tmp_path / "r.sqlite")
+    registry.record(Run(run_id="exploit/a", lane="exploit"))
+    registry.record(Run(run_id="explore/a", lane="explore"))
+    assert [r.run_id for r in registry.list(lane="exploit")] == ["exploit/a"]
+    assert len(registry.list()) == 2
+
+
+def test_a_run_without_a_lane_is_allowed(tmp_path):
+    registry = Registry(tmp_path / "r.sqlite")
+    registry.record(Run(run_id="x"))
+    assert registry.get("x").lane is None
