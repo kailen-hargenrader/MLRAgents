@@ -83,13 +83,21 @@ paper-grade work is a guardrail that gets turned off.
 ## Install
 
 ```bash
-copilot plugin marketplace add kailen-hargenrader/MLRAgents
+copilot plugin marketplace add ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 copilot plugin install mlragents@mlragents
 ```
 
+The SSH URL is load-bearing: this repository is private, and the `owner/repo`
+shorthand resolves to an anonymous HTTPS `git clone`, which cannot authenticate
+(`fatal: could not read Username for 'https://github.com'`). The `ssh://` form
+uses your existing key.
+
 Direct installs from a local path still work but are deprecated, and they copy
 the directory as-is — including a `.venv` if one is present, which turned a 39M
-checkout into 170M. Install from a clean clone or from the marketplace.
+checkout into 170M. A marketplace install of the same tree is 401K.
+
+The bundled MCP server runs through `uv`, so the first tool call after a fresh
+install pays ~8s to build the plugin's virtualenv. Subsequent calls are fast.
 
 Then, in a research repository, create `.mlragents.toml`. Start from
 [`examples/surf-2026.mlragents.toml`](examples/surf-2026.mlragents.toml), a
