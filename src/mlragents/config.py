@@ -23,6 +23,7 @@ class MissingCommand(KeyError):
 @dataclass(frozen=True)
 class Paths:
     paper: str = "paper"
+    generated: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,10 @@ class ProjectConfig:
                 f"add it to {self.root / CONFIG_NAME}"
             ) from exc
 
+    def generated_dirs(self) -> tuple[Path, ...]:
+        """Trees a generator owns, resolved. Empty unless the project declares them."""
+        return tuple((self.root / d).resolve() for d in self.paths.generated)
+
     def lane(self, name: str) -> Lane:
         try:
             return self.lanes[name]
@@ -109,7 +114,10 @@ def load(path: Path) -> ProjectConfig:
         root=path.parent,
         name=project.get("name", "unnamed"),
         python=project.get("python", "python"),
-        paths=Paths(paper=paths.get("paper", "paper")),
+        paths=Paths(
+            paper=paths.get("paper", "paper"),
+            generated=tuple(paths.get("generated", ())),
+        ),
         lanes={
             name: Lane(
                 name=name,

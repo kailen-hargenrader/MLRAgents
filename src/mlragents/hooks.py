@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import getpass
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mlragents import config as config_module
-from mlragents import context
+from mlragents import context, guardrails
+from mlragents.gitinfo import describe
+from mlragents.registry import Registry, Run, default_path
 
 # Tools that create or modify a file. Shell is deliberately absent: deciding
 # whether a command line writes somewhere would mean parsing shell, and a guess
@@ -20,6 +23,7 @@ from mlragents import context
 # at launch with --deny-tool instead.
 WRITE_TOOLS = frozenset({"create", "edit", "write", "str_replace_editor", "apply_patch"})
 PATH_KEYS = ("path", "file_path", "filePath", "target", "notebook_path")
+SHELL_TOOLS = frozenset({"shell", "bash", "run_command", "execute"})
 
 
 def session_start(payload: dict, gather=context.gather) -> dict:
@@ -95,34 +99,161 @@ CONFINED_ROLES = {
 }
 
 
-def pre_tool_use(payload: dict, role: str | None = None) -> dict:
-    """Confine a role's writes to the tree that role is answerable for.
+def _deny(reason: str) -> dict:
+    return {"permissionDecision": "deny", "permissionDecisionReason": reason}
 
-    `experiment` is deliberately unconfined: a guardrail that fires during
-    ordinary paper-grade work would be turned off, and promoting a finding
-    legitimately touches the shared scaffolding. The other three each have a
-    narrow deliverable, so confinement costs them nothing they should be doing.
+
+def _write_reason(config, role: str | None, target: str) -> str | None:
+    """Why this write must be refused, or None.
+
+    Role confinement is checked first so its message wins: it explains the
+    structure, which is the more useful thing to hear when both apply.
+    """
+    resolved = config.root / Path(target)
+    confine = CONFINED_ROLES.get(role or "")
+    if confine is not None:
+        reason = confine(config, resolved)
+        if reason is not None:
+            return reason
+    return guardrails.generated_verdict(config, resolved)
+
+
+def pre_tool_use(payload: dict, role: str | None = None) -> dict:
+    """Refuse the actions whose damage cannot be undone later.
+
+    Two independent gates. Role confinement is asymmetric — `experiment` is
+    unconfined, because a guardrail firing during ordinary paper-grade work
+    would be turned off. The submission and generated-config gates apply to
+    every role, because a dirty run and a hand-edited config are unusable to
+    anyone, whatever their intent.
     """
     try:
         role = role if role is not None else os.environ.get("MLRAGENTS_ROLE")
-        verdict = CONFINED_ROLES.get(role or "")
-        if verdict is None:
+        tool_args = payload.get("toolArgs")
+        if not isinstance(tool_args, dict):
+            return {}
+        tool = payload.get("toolName")
+        config = config_module.find_project(Path(payload.get("cwd") or "."))
+        if config is None:
+            return {}
+
+        if tool in SHELL_TOOLS:
+            command = tool_args.get("command")
+            if not isinstance(command, str):
+                return {}
+            reason = guardrails.submission_verdict(
+                config, command, guardrails.dirty_files(config.root)
+            )
+            return _deny(reason) if reason else {}
+
+        if tool in WRITE_TOOLS:
+            target = _target_path(tool_args)
+            if target is None:
+                return {}
+            reason = _write_reason(config, role, target)
+            return _deny(reason) if reason else {}
+        return {}
+    except Exception:
+        return {}
+
+
+TEX_SUFFIXES = (".tex",)
+
+
+def _changed_files(payload: dict) -> list[str]:
+    for key in ("changedFiles", "changed_files", "files"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [v for v in value if isinstance(v, str)]
+    return []
+
+
+def _result_text(payload: dict) -> tuple[str, int | None]:
+    result = payload.get("toolResult")
+    if isinstance(result, str):
+        return result, payload.get("exitCode")
+    if isinstance(result, dict):
+        text = " ".join(
+            str(result.get(k, "")) for k in ("stdout", "output", "stderr", "content")
+        )
+        code = result.get("exitCode", result.get("exit_code"))
+        return text, code if isinstance(code, int) else None
+    return "", None
+
+
+def post_tool_use(payload: dict, role: str | None = None) -> dict:
+    """Record a submission the moment it succeeds.
+
+    The registry is a cache and `runs sync` can rebuild it, but only for jobs
+    whose artefacts survive. Recording here also captures the commit the job was
+    launched from, which `sacct` does not know and no later scan could recover.
+    """
+    try:
+        if payload.get("toolName") not in SHELL_TOOLS:
             return {}
         tool_args = payload.get("toolArgs")
-        if payload.get("toolName") not in WRITE_TOOLS or not isinstance(tool_args, dict):
+        if not isinstance(tool_args, dict):
             return {}
-        target = _target_path(tool_args)
-        if target is None:
+        command = tool_args.get("command")
+        if not isinstance(command, str) or not guardrails._submits(command):
+            return {}
+        text, exit_code = _result_text(payload)
+        if exit_code not in (None, 0):
+            return {}
+        job_id = guardrails.submitted_job_id(text)
+        if job_id is None:
             return {}
         config = config_module.find_project(Path(payload.get("cwd") or "."))
         if config is None:
             return {}
-        reason = verdict(config, config.root / Path(target))
-        if reason is None:
+        git = describe(config.root)
+        lane = "exploit" if "exploit" in config.lanes else next(iter(config.lanes), None)
+        Registry(default_path(config.root)).record(
+            Run(
+                run_id=f"job/{job_id}",
+                lane=lane,
+                job_id=job_id,
+                git_sha=git.sha,
+                git_dirty=git.dirty,
+                submitted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                status="submitted",
+            )
+        )
+    except Exception:
+        return {}
+    return {}
+
+
+def agent_stop(payload: dict, role: str | None = None) -> dict:
+    """Warn when a number appears in the manuscript that no script produced.
+
+    This blocks rather than denies, because it runs after the fact: the text is
+    already written, and the useful action is to make the author look at the
+    line before it becomes a published quantity.
+    """
+    try:
+        config = config_module.find_project(Path(payload.get("cwd") or "."))
+        if config is None:
             return {}
+        offences = []
+        for name in _changed_files(payload):
+            path = config.root / Path(name)
+            if path.suffix not in TEX_SUFFIXES or not path.is_file():
+                continue
+            for line_no, line in guardrails.numeric_literals(path.read_text()):
+                offences.append(f"  {name}:{line_no}: {line}")
+        if not offences:
+            return {}
+        listed = "\n".join(offences[:10])
         return {
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
+            "decision": "block",
+            "reason": (
+                "These lines carry a numeric literal that no macro or generated "
+                "table produced:\n" + listed + "\n\nA typed number is correct "
+                "only until the experiment is re-run, and nothing will report "
+                "when it stops being correct. Replace each with a macro emitted "
+                "by the analysis step, or say which quantity is missing."
+            ),
         }
     except Exception:
         return {}
@@ -133,13 +264,20 @@ HANDLERS = {
     "SessionStart": session_start,
     "preToolUse": pre_tool_use,
     "PreToolUse": pre_tool_use,
+    "postToolUse": post_tool_use,
+    "PostToolUse": post_tool_use,
+    "agentStop": agent_stop,
+    "AgentStop": agent_stop,
+    "Stop": agent_stop,
 }
+
+ROLE_AWARE = {pre_tool_use, post_tool_use, agent_stop}
 
 
 def dispatch(event: str, payload: dict, role: str | None = None) -> dict:
     handler = HANDLERS.get(event)
     if handler is None:
         return {}
-    if handler is pre_tool_use:
+    if handler in ROLE_AWARE:
         return handler(payload, role=role)
     return handler(payload)

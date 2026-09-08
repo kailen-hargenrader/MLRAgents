@@ -9,7 +9,10 @@ out=""
 if command -v mlragents >/dev/null 2>&1; then
     out="$(mlragents hook "$1" 2>/dev/null)" || out=""
 elif command -v uv >/dev/null 2>&1; then
-    out="$(uv run --directory "$root" mlragents hook "$1" 2>/dev/null)" || out=""
+    # --project, never --directory: --directory changes the working directory,
+    # and a payload without a cwd would then resolve to the plugin's own
+    # .mlragents.toml and report the plugin as the user's project.
+    out="$(uv run --quiet --project "$root" mlragents hook "$1" 2>/dev/null)" || out=""
 fi
 
 [ -n "$out" ] || out='{}'
