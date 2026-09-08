@@ -26,6 +26,7 @@ class Paths:
     paper: str = "paper"
     scratch: str = "scratch"
     protected: tuple[str, ...] = ()
+    run_pattern: str | list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ def load(path: Path) -> ProjectConfig:
             paper=paths.get("paper", "paper"),
             scratch=paths.get("scratch", "scratch"),
             protected=tuple(paths.get("protected", ())),
+            run_pattern=paths.get("run_pattern"),
         ),
         scheduler_kind=scheduler.get("kind", "none"),
         scheduler_log_dir=scheduler.get("log_dir", "slurm_logs"),

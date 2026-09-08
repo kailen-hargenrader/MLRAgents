@@ -21,6 +21,7 @@ configs = "configs"
 paper = "paper"
 scratch = "scratch"
 protected = ["src", "experiments", "configs"]
+run_pattern = ["*/{grid}/*", "*/{grid}/{cell}/**"]
 
 [scheduler]
 kind = "slurm"
@@ -57,6 +58,39 @@ Paths are relative to the directory holding `.mlragents.toml`.
 | `paper` | `"paper"` | Manuscript sources, figures and generated tables. |
 | `scratch` | `"scratch"` | Writable sandbox for exploratory work. |
 | `protected` | `[]` | The main pipeline. Exploratory work must not modify these. |
+| `run_pattern` | none | How to read experiment labels out of a run's path. See below. |
+
+#### `run_pattern`
+
+`mlragents runs sync` records the path of every run it finds, but it will not
+guess what the components of that path mean. A directory named `2026-08-23` is a
+Hydra date, not an experiment; only the repository knows the difference. So a
+run is labelled with a `grid` and a `cell` only if this key says how to find
+them.
+
+A pattern is matched against the run's path relative to `outputs`:
+
+| Segment | Matches |
+|---|---|
+| `{grid}`, `{cell}` | One component, recorded under that name. |
+| `*` | Exactly one component, discarded. |
+| `**` | Any number of components, discarded. Must be last. |
+| anything else | Itself, literally. |
+
+Without a trailing `**`, a pattern matches only paths of exactly its length.
+A pattern that does not match yields no labels at all — an absent label is
+better than a wrong one.
+
+Give a list to handle a tree whose runs sit at different depths. Patterns are
+tried in order and the first match wins, so put the most specific first:
+
+```toml
+run_pattern = ["*/{grid}/*", "*/{grid}/{cell}/**"]
+```
+
+against Hydra's `outputs/<date>/<experiment>/[<cell>/…]/<time>` skips the date,
+takes the experiment as the grid, and leaves `cell` empty for the shallow runs
+that have none — rather than recording their timestamp as a cell.
 
 ### `[scheduler]`
 

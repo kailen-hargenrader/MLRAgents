@@ -42,8 +42,9 @@ def test_parse_squeue_ignores_blank_and_short_lines():
 
 
 def test_parse_sacct_keeps_exit_code():
-    assert parse_sacct(SACCT_TEXT) == [
-        Job("2541417", "pers_comp", "RUNNING", "00:28:52", "hpc-92-09", "0:0")
+    text = "2185255|pers_comp|TIMEOUT|4-00:00:18|hpc-22-15|1:0\n"
+    assert parse_sacct(text) == [
+        Job("2185255", "pers_comp", "TIMEOUT", "4-00:00:18", "hpc-22-15", "1:0")
     ]
 
 
@@ -91,3 +92,16 @@ def test_first_error_finds_the_signal():
     )
     assert first_error(text) == "RuntimeError: CUDA out of memory"
     assert first_error("all good\n") is None
+
+
+def test_unfinished_jobs_have_no_exit_code():
+    """sacct reports 0:0 for a running job; reading that as success is wrong."""
+    text = (
+        "2541417|pers_comp|RUNNING|00:48:34|hpc-92-09|0:0\n"
+        "2185254|pers_comp|PENDING|00:00:00|None assigned|0:0\n"
+        "2185255|pers_comp|TIMEOUT|4-00:00:18|hpc-22-15|0:0\n"
+    )
+    running, pending, timeout = parse_sacct(text)
+    assert running.exit_code is None
+    assert pending.exit_code is None
+    assert timeout.exit_code == "0:0"

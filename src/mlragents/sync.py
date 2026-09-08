@@ -34,21 +34,50 @@ def _walk_visible(root: Path):
             yield Path(dirpath)
 
 
+def match_pattern(parts: tuple[str, ...], pattern: str) -> dict[str, str]:
+    """Extract named labels from a run path.
+
+    A pattern is a slash-joined sequence of segments: `{name}` captures the
+    component, `*` skips one, `**` skips any number and must come last, and
+    anything else must match literally. A pattern that does not match yields no
+    labels, because a wrong label is worse than an absent one.
+    """
+    segments = pattern.split("/")
+    labels: dict[str, str] = {}
+    for index, segment in enumerate(segments):
+        if segment == "**":
+            return labels if index == len(segments) - 1 else {}
+        if index >= len(parts):
+            return {}
+        part = parts[index]
+        if segment.startswith("{") and segment.endswith("}"):
+            labels[segment[1:-1]] = part
+        elif segment != "*" and segment != part:
+            return {}
+    return labels if len(segments) == len(parts) else {}
+
+
 def discover_outputs(config: ProjectConfig) -> list[Run]:
     outputs_root = config.resolve("outputs")
     if not outputs_root.is_dir():
         return []
+    pattern = config.paths.run_pattern
+    patterns = [pattern] if isinstance(pattern, str) else list(pattern or ())
     runs = []
     for path in _walk_visible(outputs_root):
         if not _is_run_dir(path):
             continue
         relative = path.relative_to(outputs_root)
-        parts = relative.parts
+        labels: dict[str, str] = {}
+        for candidate in patterns:
+            labels = match_pattern(relative.parts, candidate)
+            if labels:
+                break
         runs.append(
             Run(
                 run_id=relative.as_posix(),
-                grid=parts[0] if len(parts) > 1 else None,
-                cell=parts[1] if len(parts) > 2 else None,
+                grid=labels.get("grid"),
+                cell=labels.get("cell"),
                 outputs_path=str(path),
             )
         )

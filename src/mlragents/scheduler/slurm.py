@@ -30,20 +30,29 @@ class Job:
     exit_code: str | None = None
 
 
+UNFINISHED = frozenset({"RUNNING", "PENDING", "SUSPENDED", "REQUEUED", "RESIZING"})
+
+
 def _parse(text: str, width: int) -> list[Job]:
     jobs = []
     for line in text.splitlines():
         parts = line.strip().split("|")
         if len(parts) < width:
             continue
+        state = parts[2]
+        exit_code = parts[5] if width > 5 else None
+        # sacct prints 0:0 for a job that has not finished; reporting that as an
+        # exit code would let a running job read as a clean success.
+        if (state.split()[0] if state else "") in UNFINISHED:
+            exit_code = None
         jobs.append(
             Job(
                 job_id=parts[0],
                 name=parts[1],
-                state=parts[2],
+                state=state,
                 elapsed=parts[3],
                 node=parts[4],
-                exit_code=parts[5] if width > 5 else None,
+                exit_code=exit_code,
             )
         )
     return jobs

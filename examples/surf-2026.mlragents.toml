@@ -1,0 +1,26 @@
+[project]
+name = "surf-2026"
+python = "uv run python"
+
+[paths]
+outputs = "outputs"
+configs = "configs"
+paper = "paper"
+scratch = "scratch"
+protected = ["src", "experiments", "configs"]
+# Hydra writes outputs/<date>/<experiment>/[<cell>/...]/<time>. The date is not
+# a label, so it is skipped; the shallow pattern is first so a run with no cell
+# does not get its timestamp recorded as one.
+run_pattern = ["*/{grid}/*", "*/{grid}/{cell}/**"]
+
+[scheduler]
+kind = "slurm"
+log_dir = "slurm_logs"
+
+[tracker]
+kind = "wandb"
+
+[commands]
+train = "uv run experiments/run_experiment.py --config-name={config}"
+collect = "uv run scripts/collect_ablation_eval.py"
+paper = "bash scripts/build_paper.sh"
