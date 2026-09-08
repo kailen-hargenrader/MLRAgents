@@ -130,15 +130,20 @@ repository. It is the only per-repo artefact the system requires.
 
 ```toml
 [project]
-name = "surf-2026"
+name = "my-project"
 python = "uv run python"          # how to invoke the environment
 
 [paths]
+paper = "paper"
+
+[explore]                         # insight; may never reach the paper
+root = "explore"
+outputs = "outputs"               # relative to root
+
+[exploit]                         # the paper's experiment repository
+root = "exploit"
 outputs = "outputs"
-configs = "configs"
-paper    = "paper"
-scratch  = "scratch"              # exploratory agent's writable sandbox
-protected = ["src", "experiments", "configs"]   # main pipeline
+run_pattern = ["{grid}/{cell}/**"]
 
 [scheduler]
 kind = "slurm"
@@ -148,8 +153,8 @@ log_dir = "slurm_logs"
 kind = "wandb"
 
 [commands]
-train   = "uv run experiments/run_experiment.py --config-name={config}"
-collect = "uv run scripts/collect_ablation_eval.py --grid {grid}"
+train   = "uv run exploit/run_experiment.py --config-name={config}"
+collect = "uv run exploit/scripts/collect.py --grid {grid}"
 paper   = "bash scripts/build_paper.sh"
 ```
 
@@ -160,14 +165,55 @@ it does not know. When `.mlragents.toml` is absent, tools that need it fail with
 an actionable message and the `initializing-a-research-repo` skill offers to
 generate one.
 
+### 3.1a Two lanes: `explore` and `exploit`
+
+Every research repository under this system has two top-level experiment trees,
+and the difference between them is evidentiary, not organisational.
+
+```
+explore/     insight. Runs here may inform what gets tried next.
+             Nothing here is ever cited.
+exploit/     evidence. This is the paper's experiment repository.
+             Every number in the manuscript traces to a run here.
+paper/       the manuscript.
+```
+
+**The invariant this exists to enforce: a quantity in the paper must resolve to
+an `exploit` run.** This is the failure the whole system is built against — a
+promising number produced under exploratory conditions (a stale branch, an
+untracked edit, one lucky seed) drifting into a table months later, when nobody
+can reconstruct how it was made. Separating the trees makes that drift a
+detectable event rather than an untraceable habit.
+
+The split is worth its cost only because it is enforced mechanically:
+
+- Runs are recorded with the lane they came from (§3.2), so the lane of any
+  cited number is a lookup rather than a recollection.
+- An agent in the `explore` role cannot write outside `explore/` (§3.3).
+- Promotion `explore` → `exploit` is a deliberate act: re-running the experiment
+  in the exploit tree from a clean tree. **An explore run is never moved or
+  copied into `exploit/`** — that would launder its provenance and defeat the
+  separation. What promotes is the idea; the evidence is generated afresh.
+
+Both lanes are declared in `.mlragents.toml`, so the directory names are the
+default rather than a hard-coded assumption, and a repository that predates this
+structure can declare a single `exploit` lane at its root. What is not
+configurable is the meaning: `explore` is never evidence.
+
 ### 3.2 The run registry
 
 `.mlragents/registry.sqlite` in the research repo (git-ignored; it is a cache of
 facts recoverable from `outputs/` and Slurm).
 
-One row per run: run id, grid, cell, config path, config hash, resolved-config
-hash, git SHA, working-tree-dirty flag, seed, scheduler job id, node/GPU,
-submitted/started/finished timestamps, status, outputs path, tracker URL.
+One row per run: run id, **lane**, grid, cell, config path, config hash,
+resolved-config hash, git SHA, working-tree-dirty flag, seed, scheduler job id,
+node/GPU, submitted/started/finished timestamps, status, outputs path, tracker
+URL.
+
+`lane` is `explore` or `exploit` and is derived from which tree the run was
+found in, never from anything the model asserts. Run ids are lane-qualified
+(`exploit/ablation/softmax/01-00-00`), so the same relative path in both trees
+cannot collide, and the lane of a cited run is visible in the citation itself.
 
 Written automatically by the `postToolUse` hook on `sbatch`, and reconcilable
 after the fact by `mlragents runs sync`, which walks `outputs/` and `sacct`.
@@ -201,6 +247,14 @@ processes read to refine messages and to catch the cases filters cannot express
 environment is the mechanism and the previously specified
 `.mlragents/session/<sessionId>.json` fallback is unnecessary.
 
+**Lane containment.** A `preToolUse` hook reads `MLRAGENTS_ROLE` and the tool's
+path arguments and refuses any write by the `explore` role that lands outside the
+`explore` lane. This is the hook that makes §3.1a real: prompt text asking an
+agent to stay in its lane is a request, while a refused tool call is a fact. It
+is deliberately asymmetric — the `exploit` role is not confined to `exploit/`,
+because promoting a finding legitimately touches the paper and the shared
+scaffolding, and a guardrail that fires during normal work gets disabled.
+
 Guardrails that hold regardless of role — dirty-tree submission, hand-edited
 generated configs, provenance recording, the numeric audit — need neither
 mechanism and are the ones shipped first.
@@ -212,19 +266,23 @@ mechanism and are the ones shipped first.
 Four. Each is a role with a distinct tool budget and a distinct definition of
 done. More would be speculative.
 
-**`explore`** — cheap, fast model. Writable only under `paths.scratch` and
-barred from `sbatch`/`srun`, enforced by the launcher's session filters (§3.3)
+**`explore`** — cheap, fast model. Writable only under the `explore` lane,
+enforced by the launcher's session filters and the lane-containment hook (§3.3)
 rather than by prompt text. Deliverable is a written finding with the command
 that produced it, never code of record. Explicitly licensed to be sloppy, and
-explicitly barred from claiming a result is real.
+explicitly barred from claiming a result is real or citable. May submit jobs —
+exploration on a cluster is the point — but its runs are recorded in the
+`explore` lane and are therefore never eligible for the paper.
 
-**`experiment`** — paper-grade runs. Strong model. May write configs only
-through the repository's generator, may `sbatch`, must register every run.
-Refuses to launch from a dirty working tree. Before a grid, requires: the axis
-under test named, the held-fixed set named, and the outcome that would falsify
-the hypothesis written down.
+**`experiment`** — paper-grade runs, in the `exploit` lane only. Strong model.
+May write configs only through the repository's generator, may `sbatch`, must
+register every run. Refuses to launch from a dirty working tree. Before a grid,
+requires: the axis under test named, the held-fixed set named, and the outcome
+that would falsify the hypothesis written down. When asked to promote an explore
+finding, it re-runs the experiment in `exploit/`; it never copies artefacts
+across the lane boundary.
 
-**`analysis`** — read-only over `outputs/`; writes only under `paths.paper`
+**`analysis`** — read-only over the `exploit` lane's outputs; writes only under `paths.paper`
 (figure/table scripts and their outputs). May not touch training code, which
 prevents the failure where a disappointing result is "fixed" upstream.
 
@@ -364,11 +422,20 @@ Each phase ends with something usable.
 1. **Scope confirmation.** The design treats *experiment rigour and provenance*
    as the primary problem, with the paper loop second. If cluster ergonomics
    (fewer bespoke `submit_*.sh` scripts) matters more, phases 1 and 4 swap.
-2. **Audience.** Solo use, or the Stuart group? Group use raises the priority of
-   `.mlragents.toml` ergonomics and the marketplace path.
+2. **Audience.** ~~Solo use, or the Stuart group?~~ **Answered 2026-09-08: solo.**
+   Consequences taken: the repository structure can be prescribed rather than
+   discovered (§3.1a), and marketplace polish is deprioritised in favour of
+   enforcement.
 3. **Agent count.** Four agents, or is `analysis` better folded into `paper`?
 4. **Registry location.** In-repo SQLite as specified, or a single global
    registry under `~/.mlragents/` spanning projects?
 5. **Retrofit depth.** Should phase 1 include migrating `SURF_2026`'s existing
    `outputs/` tree into the registry, or start recording from installation
    onward?
+
+6. **Lane scaffolding for existing repositories.** `mlragents init` creates the
+   `explore`/`exploit` structure in a new repository. `SURF_2026` predates it and
+   is modelled as a single `exploit` lane at its root. Whether to split its
+   existing runs retroactively is left open — it would require judging, run by
+   run, which were evidence and which were exploration, and that judgement is
+   exactly what the structure exists to stop making after the fact.
