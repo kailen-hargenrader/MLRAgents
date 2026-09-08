@@ -7,6 +7,13 @@
         "command": "./hooks/mlragents-hook sessionStart",
         "timeoutSec": 15
       }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "./hooks/mlragents-hook preToolUse",
+        "timeoutSec": 10
+      }
     ]
   }
 }

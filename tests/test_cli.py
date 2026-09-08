@@ -15,3 +15,17 @@ def test_version_command_prints_version(capsys):
 
 def test_unknown_command_is_an_error(capsys):
     assert main(["no-such-command"]) == 2
+
+
+def test_init_scaffolds_in_the_working_directory(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(["init", "--name", "demo"]) == 0
+    assert (tmp_path / "exploit" / "outputs").is_dir()
+    assert "explore/ is insight" in capsys.readouterr().out
+
+
+def test_init_refuses_twice(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    main(["init", "--name", "demo"])
+    assert main(["init", "--name", "demo"]) == 1
+    assert "already exists" in capsys.readouterr().err

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import mlragents
 
-KNOWN_COMMANDS = {"hook", "runs"}
+KNOWN_COMMANDS = {"hook", "runs", "init"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,7 +26,30 @@ def build_parser() -> argparse.ArgumentParser:
         "sync", help="rebuild the registry from outputs/ and sacct"
     )
     sync_parser.add_argument("--since", default="now-7days")
+    init_parser = subparsers.add_parser(
+        "init", help="scaffold the explore/exploit structure in this directory"
+    )
+    init_parser.add_argument("--name", default=None, help="project name")
+    init_parser.add_argument("--python", default="uv run python")
+    init_parser.add_argument("--scheduler", default="slurm")
     return parser
+
+
+def _run_init(name: str | None, python: str, scheduler: str) -> int:
+    from mlragents.init import AlreadyInitialised, init_project
+
+    root = Path.cwd()
+    try:
+        created = init_project(
+            root, name=name or root.name, python=python, scheduler=scheduler
+        )
+    except AlreadyInitialised as exc:
+        print(f"mlragents: {exc}", file=sys.stderr)
+        return 1
+    for path in created:
+        print(f"created {path.relative_to(root)}")
+    print("explore/ is insight; exploit/ is what the paper cites.")
+    return 0
 
 
 def _run_sync(since: str) -> int:
@@ -78,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_hook(args.event)
     if args.command == "runs" and args.runs_command == "sync":
         return _run_sync(args.since)
+    if args.command == "init":
+        return _run_init(args.name, args.python, args.scheduler)
     parser.print_help()
     return 0
 
