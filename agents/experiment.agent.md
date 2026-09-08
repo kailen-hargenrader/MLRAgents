@@ -12,12 +12,26 @@ tools:
     "mlragents-jobs_queue",
     "mlragents-jobs_history",
     "mlragents-jobs_logs",
+    "mlragents-jobs_submit",
+    "mlragents-runs_provenance",
+    "mlragents-grid_diff",
+    "mlragents-collect_results",
   ]
 ---
 
 You run experiments whose results may enter a paper. Everything you produce
 lives in the `exploit` lane, and the contract for that lane is that every number
 in the manuscript traces back to a run in it.
+
+Prefer `jobs_submit` over a bare `sbatch`. It records the commit, lane, grid,
+cell, config and seed in the same step as the submission, and refuses when it
+could not. Provenance is only recoverable at submit time: `sacct` never knew
+which commit a job ran, and by the time anyone checks, the tree has moved on.
+
+Before launching a grid, run `grid_diff` on the two cells you are comparing,
+naming the axis under test. If anything outside that axis differs, the grid does
+not test what you are about to claim it tests, and no amount of care in the
+analysis will recover the attribution.
 
 Before launching a grid, state three things and get agreement: the axis under
 test, the set held fixed, and the outcome that would falsify the hypothesis. An

@@ -333,11 +333,13 @@ Python, unit-testable, and shared with the CLI.
 
 Deliberately small. Each is either universal or a declared-command passthrough.
 
-- `runs_list`, `runs_get`, `runs_provenance` — query the registry.
-- `jobs_queue`, `jobs_status`, `jobs_logs` — `squeue`/`sacct`, plus the tail of a
+- `runs_list`, `runs_get`, `runs_provenance` — query the registry. `runs_provenance`
+  returns the reasons a run is not citable, not a bare boolean.
+- `lanes_list` — the declared lanes and which of them may be cited.
+- `jobs_queue`, `jobs_history`, `jobs_logs` — `squeue`/`sacct`, plus the tail of a
   job's `.err`/`.out` with the first error line extracted.
 - `jobs_submit` — submit through the scheduler, refusing when provenance cannot
-  be recorded.
+  be recorded. Withheld from roles the launcher denies the scheduler.
 - `grid_diff` — diff two config cells and assert that only the intended axis
   differs. This is the ablation invariant made mechanical.
 - `paper_build` — run `commands.paper`; return errors and undefined references.
@@ -399,11 +401,13 @@ Each phase ends with something usable.
    hook shipped here rather than in phase 3, because the explore/exploit split
    is not a convention if nothing enforces it.)* The four agents and the seven skills; used in anger on
    the current paper.
-3. **Guardrails.** *(next)* The remaining `preToolUse` denials — dirty-tree
+3. **Guardrails.** *(done)* The remaining `preToolUse` denials — dirty-tree
    `sbatch`, hand-edits to generated configs — `postToolUse` provenance recording,
    and the `agentStop` numeric audit.
-4. **Paper loop.** `grid_diff`, `paper_build`, `paper_audit_numbers`, and the
-   `analysis`/`paper` agents' full workflow.
+4. **Paper loop.** *(done)* `grid_diff`, `paper_build`, `paper_audit_numbers`,
+   `collect_results`, `jobs_submit`, `runs_provenance`, and the `analysis`/`paper`
+   agents' full workflow. `jobs_submit` is withheld from every role the launcher
+   denies the scheduler, since an MCP submitter would route around `--deny-tool`.
 
 ## 8. Risks
 

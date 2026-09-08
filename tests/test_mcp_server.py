@@ -82,18 +82,13 @@ def test_jobs_logs_missing_logs_are_empty(project):
 
 
 def test_server_builds_with_every_tool_registered():
+    """Derived from TOOLS, so adding a tool cannot leave it unregistered."""
     import asyncio
 
     server = mcp_server.build_server()
     names = {tool.name for tool in asyncio.run(server.list_tools())}
-    assert names == {
-        "runs_list",
-        "runs_get",
-        "lanes_list",
-        "jobs_queue",
-        "jobs_history",
-        "jobs_logs",
-    }
+    assert names == {tool.__name__ for tool in mcp_server.TOOLS}
+    assert "runs_list" in names
 
 
 LANE_CONFIG = """
@@ -135,3 +130,127 @@ def test_lanes_list_describes_the_declared_lanes(lane_project):
     assert by_name["exploit"]["citable"] is True
     assert by_name["explore"]["citable"] is False
     assert by_name["explore"]["outputs_dir"].endswith("explore/outputs")
+
+
+# --- phase 4: the paper loop ------------------------------------------------
+
+PAPER_CONFIG = """
+[project]
+name = "fixture"
+
+[paths]
+paper = "paper"
+
+[explore]
+root = "explore"
+
+[exploit]
+root = "exploit"
+
+[scheduler]
+kind = "slurm"
+
+[commands]
+collect = "echo collected"
+paper = "echo built"
+"""
+
+
+@pytest.fixture()
+def paper_project(tmp_path):
+    (tmp_path / ".mlragents.toml").write_text(PAPER_CONFIG)
+    for d in ("explore", "exploit", "paper", "exploit/configs"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+def test_grid_diff_reports_a_second_axis(paper_project):
+    left = paper_project / "exploit/configs/a.yaml"
+    right = paper_project / "exploit/configs/b.yaml"
+    left.write_text("model:\n  kernel: elu\nlr: 0.001\n")
+    right.write_text("model:\n  kernel: softmax\nlr: 0.01\n")
+    result = mcp_server.grid_diff(
+        str(paper_project),
+        "exploit/configs/a.yaml",
+        "exploit/configs/b.yaml",
+        axes=["model.kernel"],
+    )
+    assert result["ok"] is False
+    assert result["violations"] == ["lr"]
+
+
+def test_grid_diff_reports_a_missing_file_rather_than_raising(paper_project):
+    result = mcp_server.grid_diff(str(paper_project), "absent.yaml", "gone.yaml")
+    assert result["ok"] is False
+    assert "error" in result
+
+
+def test_paper_build_runs_the_declared_command(paper_project):
+    result = mcp_server.paper_build(str(paper_project))
+    assert result["returncode"] == 0
+    assert result["command"] == "echo built"
+
+
+def test_paper_build_without_the_command_names_the_key(project):
+    result = mcp_server.paper_build(str(project))
+    assert result["ok"] is False
+    assert "commands.paper" in result["error"]
+
+
+def test_paper_audit_numbers_reads_a_file(paper_project):
+    (paper_project / "paper/main.tex").write_text("We reach 92.4\\% accuracy.\n")
+    result = mcp_server.paper_audit_numbers(str(paper_project), path="paper/main.tex")
+    assert result["count"] == 1
+    assert result["findings"][0]["line"] == 1
+
+
+def test_paper_audit_numbers_accepts_literal_text(paper_project):
+    result = mcp_server.paper_audit_numbers(str(paper_project), text="loss fell to 0.31")
+    assert result["count"] == 1
+
+
+def test_paper_audit_numbers_needs_one_of_path_or_text(paper_project):
+    assert "error" in mcp_server.paper_audit_numbers(str(paper_project))
+
+
+def test_paper_audit_numbers_reports_an_unreadable_file(paper_project):
+    result = mcp_server.paper_audit_numbers(str(paper_project), path="absent.tex")
+    assert "error" in result
+
+
+def test_collect_results_runs_the_declared_command(paper_project):
+    result = mcp_server.collect_results(str(paper_project))
+    assert result["ok"] is True
+    assert "collected" in result["stdout"]
+
+
+def test_collect_results_without_the_command_names_the_key(project):
+    result = mcp_server.collect_results(str(project))
+    assert result["ok"] is False
+    assert "commands.collect" in result["error"]
+
+
+def test_jobs_submit_returns_a_reason_rather_than_raising(paper_project):
+    result = mcp_server.jobs_submit(str(paper_project), "absent.sh", lane="exploit")
+    assert result["submitted"] is False
+    assert result["recorded"] is False
+    assert "no such submission script" in result["reason"]
+
+
+def test_runs_provenance_judges_a_recorded_run(paper_project):
+    Registry(default_path(paper_project)).record(
+        Run(run_id="exploit/job/9", lane="exploit", git_sha="a" * 40, status="COMPLETED")
+    )
+    assert mcp_server.runs_provenance(str(paper_project), "exploit/job/9")["citable"] is True
+
+
+def test_every_tool_is_documented_and_takes_cwd():
+    """The docstring is the only description an agent sees."""
+    for tool in mcp_server.TOOLS:
+        assert tool.__doc__, f"{tool.__name__} has no docstring"
+        assert "cwd" in tool.__code__.co_varnames, f"{tool.__name__} does not take cwd"
+
+
+def test_the_tool_list_has_no_duplicates():
+    names = [tool.__name__ for tool in mcp_server.TOOLS]
+    assert len(names) == len(set(names))

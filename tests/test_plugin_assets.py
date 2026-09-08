@@ -7,6 +7,7 @@ turn that silence into a failure.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -75,3 +76,42 @@ def test_every_skill_says_when_to_use_it(path):
         f"{path.parent.name}: a description that does not say when to use the "
         "skill gives the model nothing to match against"
     )
+
+
+def agent_tools(name: str) -> str:
+    return frontmatter(ROOT / "agents" / f"{name}.agent.md").get("tools", "")
+
+
+@pytest.mark.parametrize("path", AGENTS, ids=lambda p: p.name)
+def test_every_listed_mcp_tool_actually_exists(path):
+    """A misspelled tool name is not an error; the tool is just absent."""
+    from mlragents import mcp_server
+
+    available = {f"mlragents-{tool.__name__}" for tool in mcp_server.TOOLS}
+    listed = set(re.findall(r"mlragents-\w+", agent_tools(path.name.removesuffix(".agent.md"))))
+    assert listed <= available, f"{path.name} lists unknown tools: {listed - available}"
+
+
+@pytest.mark.parametrize("role", sorted(EXPECTED_AGENTS - {"experiment"}))
+def test_only_experiment_may_submit_jobs(role):
+    """jobs_submit would otherwise bypass the launcher's scheduler denial.
+
+    explore, analysis and paper are launched with --deny-tool=shell(sbatch:*).
+    An MCP tool that submits would route around that denial, so it is withheld
+    from their allowlists — which is what actually hides it from them.
+    """
+    from mlragents.launcher import ROLES
+
+    assert ROLES[role]["deny"], f"{role} is expected to be denied the scheduler"
+    assert "mlragents-jobs_submit" not in agent_tools(role)
+
+
+def test_experiment_may_submit_jobs():
+    assert "mlragents-jobs_submit" in agent_tools("experiment")
+
+
+def test_the_paper_agent_can_build_and_audit():
+    tools = agent_tools("paper")
+    assert "mlragents-paper_build" in tools
+    assert "mlragents-paper_audit_numbers" in tools
+    assert "mlragents-runs_provenance" in tools

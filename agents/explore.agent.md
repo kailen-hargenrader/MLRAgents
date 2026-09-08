@@ -13,6 +13,7 @@ tools:
     "mlragents-jobs_queue",
     "mlragents-jobs_history",
     "mlragents-jobs_logs",
+    "mlragents-grid_diff",
   ]
 ---
 

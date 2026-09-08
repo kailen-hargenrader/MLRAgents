@@ -121,9 +121,12 @@ are substituted by the caller. Keys used so far:
 | Key | Used by |
 |---|---|
 | `train` | launching an experiment |
-| `collect` | gathering evaluation results |
-| `paper` | rebuilding every figure, table and macro, then the PDF |
+| `collect` | gathering evaluation results — the `collect_results` tool |
+| `paper` | rebuilding every figure, table and macro, then the PDF — the `paper_build` tool |
 | `generate` | regenerating configs; named in the hand-edit refusal |
+
+A tool that needs an undeclared command fails with a message naming the key and
+the file to add it to, rather than guessing a command that might work.
 
 ## Unknown sections
 

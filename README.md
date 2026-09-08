@@ -5,13 +5,13 @@ difference between a scratch experiment and one whose numbers may reach a paper,
 backed by tools that read run provenance and cluster state as facts rather than
 guesses.
 
-Status: **phases 0–3 complete** — foundation, the explore/exploit structure,
-and the four agents with their skill library (see the
+Status: **phases 0–4 complete** — foundation, the explore/exploit structure,
+the four agents with their skill library, the guardrails, and the paper loop
+(see the
 [design spec](docs/superpowers/specs/2026-09-08-mlragents-design.md)). The
 registry, scheduler adapters, session-start context, hook dispatch and MCP
 server work and are verified against a live cluster and a real 65G research
-repository. Phase 4 — `grid_diff`, `paper_build` and the full paper loop — is not built
-yet.
+repository.
 
 ## The structure
 
@@ -79,6 +79,32 @@ The gates that protect provenance apply to **every** role, because a dirty run
 is unusable to anyone whatever their intent. Role confinement is asymmetric:
 `experiment` is unconfined, because a guardrail that fires during ordinary
 paper-grade work is a guardrail that gets turned off.
+
+## Tools
+
+Twelve, over MCP. Each is either universal or a passthrough to a command the
+project declared.
+
+| Tool | Answers |
+|---|---|
+| `runs_list`, `runs_get` | what has been run, and with what provenance |
+| `runs_provenance` | **may the paper cite this run**, and if not, what disqualifies it |
+| `lanes_list` | which trees exist and which of them is citable |
+| `jobs_queue`, `jobs_history` | what is queued, what finished, and how |
+| `jobs_logs` | the tails of a job's `.out`/`.err` plus the first error line |
+| `jobs_submit` | submit *and* record the commit in one step; refuses when it cannot |
+| `grid_diff` | do these two cells differ **only** along the declared axis |
+| `collect_results` | `commands.collect` |
+| `paper_build` | `commands.paper`, with errors, undefined refs and undefined citations extracted from the log |
+| `paper_audit_numbers` | which numbers in the `.tex` are not carried by a macro |
+
+`jobs_submit` is listed only by the `experiment` agent. The other three roles
+launch with `--deny-tool=shell(sbatch:*)`, and a submitting tool in their
+allowlists would route straight around that.
+
+`grid_diff` is the ablation invariant made mechanical. Two cells that differ in
+two places support no claim about either, and that is not visible by reading
+two YAML files side by side.
 
 ## Install
 

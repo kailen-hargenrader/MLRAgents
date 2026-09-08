@@ -7,7 +7,7 @@ name = "mlragents"
 version = "0.1.0"
 description = "Agentic system for machine learning research"
 requires-python = ">=3.11"
-dependencies = ["mcp>=2"]
+dependencies = ["mcp>=2", "pyyaml>=6"]
 
 [project.scripts]
 mlragents = "mlragents.cli:run"
