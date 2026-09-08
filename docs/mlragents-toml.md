@@ -17,6 +17,7 @@ python = "uv run python"
 
 [paths]
 paper = "paper"
+generated = ["exploit/configs"]
 
 # Insight. Never cited.
 [explore]
@@ -60,6 +61,13 @@ Paths are relative to the directory holding `.mlragents.toml`.
 | Key | Default | Meaning |
 |---|---|---|
 | `paper` | `"paper"` | Manuscript sources, figures and generated tables. |
+| `generated` | `[]` | Trees a generator owns. Hand-edits to them are refused. |
+
+Declaring `generated` turns on the hand-edit denial: a write into one of these
+directories is refused, and the refusal names `commands.generate` if it is
+declared. Editing one generated config is how a second axis enters an ablation
+without anyone deciding to add it, and the edited file still sits beside the
+run's artefacts looking authoritative.
 
 ### `[explore]` and `[exploit]`
 
@@ -115,6 +123,7 @@ are substituted by the caller. Keys used so far:
 | `train` | launching an experiment |
 | `collect` | gathering evaluation results |
 | `paper` | rebuilding every figure, table and macro, then the PDF |
+| `generate` | regenerating configs; named in the hand-edit refusal |
 
 ## Unknown sections
 

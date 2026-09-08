@@ -5,13 +5,13 @@ difference between a scratch experiment and one whose numbers may reach a paper,
 backed by tools that read run provenance and cluster state as facts rather than
 guesses.
 
-Status: **phases 0–2 complete** — foundation, the explore/exploit structure,
+Status: **phases 0–3 complete** — foundation, the explore/exploit structure,
 and the four agents with their skill library (see the
 [design spec](docs/superpowers/specs/2026-09-08-mlragents-design.md)). The
 registry, scheduler adapters, session-start context, hook dispatch and MCP
 server work and are verified against a live cluster and a real 65G research
-repository. Phase 3's remaining guardrails — provenance recording on `sbatch`
-and the numeric-literal audit — are not built yet.
+repository. Phase 4 — `grid_diff`, `paper_build` and the full paper loop — is not built
+yet.
 
 ## The structure
 
@@ -59,6 +59,26 @@ a paper belongs in a hook, not in a prompt.
 substrates — git, Slurm, SQLite, the filesystem — or it shells out to a command
 the repository declared. Nothing is guessed from a directory name. See
 [`docs/mlragents-toml.md`](docs/mlragents-toml.md).
+
+## Guardrails
+
+Four, and each one exists because its violation is *silent*: nothing downstream
+would report the damage.
+
+| When | What is refused | Override |
+|---|---|---|
+| `sbatch`/`srun`/`salloc` from a dirty tree | The submission | `MLRAGENTS_ALLOW_DIRTY=1` |
+| A write into a declared `paths.generated` tree | The edit; names the generator | change the generator |
+| A write outside a role's tree | The edit | run a different role |
+| A `.tex` file gains a numeric literal | The turn is blocked for review | use a macro |
+
+A successful submission is recorded automatically with the commit it ran from —
+something `sacct` does not know and no later scan can recover.
+
+The gates that protect provenance apply to **every** role, because a dirty run
+is unusable to anyone whatever their intent. Role confinement is asymmetric:
+`experiment` is unconfined, because a guardrail that fires during ordinary
+paper-grade work is a guardrail that gets turned off.
 
 ## Install
 
