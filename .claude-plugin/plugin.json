@@ -7,5 +7,6 @@
   "license": "MIT",
   "keywords": ["research", "machine-learning", "slurm", "reproducibility"],
   "agents": "agents/",
-  "hooks": "hooks/hooks.json"
+  "hooks": "hooks/hooks.json",
+  "mcpServers": ".mcp.json"
 }
