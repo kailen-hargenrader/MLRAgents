@@ -1,3 +1,5 @@
+import pytest
+
 import mlragents
 from mlragents.cli import main
 
@@ -53,3 +55,14 @@ def test_run_without_a_project_explains_how_to_start(tmp_path, monkeypatch, caps
     monkeypatch.chdir(tmp_path)
     assert main(["run", "explore", "--print-argv"]) == 1
     assert "mlragents init" in capsys.readouterr().err
+
+
+def test_run_help_names_every_role(capsys):
+    """The help said "explore or experiment" long after there were four roles."""
+    from mlragents.launcher import ROLES
+
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    out = capsys.readouterr().out
+    for role in ROLES:
+        assert role in out

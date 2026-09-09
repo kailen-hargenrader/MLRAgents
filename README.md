@@ -1,310 +1,194 @@
 # MLRAgents
 
-A GitHub Copilot CLI plugin for machine learning research: agents that know the
-difference between a scratch experiment and one whose numbers may reach a paper,
-backed by tools that read run provenance and cluster state as facts rather than
-guesses.
+**Copilot CLI agents for machine learning research.**
 
-Status: **phases 0–4 complete** — foundation, the explore/exploit structure,
-the four agents with their skill library, the guardrails, and the paper loop
-(see the
-[design spec](docs/superpowers/specs/2026-09-08-mlragents-design.md)). The
-registry, scheduler adapters, session-start context, hook dispatch and MCP
-server work and are verified against a live cluster and a real 65G research
-repository.
+Six months from now, a reviewer asks where the 91.3% in Table 2 came from. You
+should be able to answer.
 
-## The structure
+## Why
 
-A project has two experiment trees, and the difference between them is
-evidentiary rather than organisational:
+Most of what goes wrong in an ML paper isn't a modelling mistake. It's
+bookkeeping:
+
+- A number in the paper came from a run whose code was never committed.
+- Two cells in an "ablation" differed in two places, not one, so the comparison
+  supported nothing.
+- A scratch result from week three quietly became a headline number.
+- Nobody can tell which of the 400 output directories was the real one.
+
+None of that shows up as an error. It shows up in review, or after publication,
+or not at all. MLRAgents makes those specific mistakes hard to commit.
+
+## How
+
+Your repository gets two experiment lanes:
 
 ```
-explore/     insight — may never reach the paper, and is never cited
-exploit/     evidence — every quantity in the paper resolves to a run here
-paper/       the manuscript
+explore/    fast and scrappy — one seed, dirty tree, half an idea. Never cited.
+exploit/    disciplined — every number in the paper comes from here.
+paper/      the manuscript.
 ```
 
-**A number in the paper must trace to an `exploit` run.** That is the whole
-point of the split. Exploration buys its speed — one seed, a dirty tree, a
-hard-coded path — by giving up the right to be cited, and promotion across the
-boundary means *re-running* the experiment under exploit-lane conditions.
-Artefacts are never copied from `explore/` to `exploit/`; that would launder
-their provenance.
+You work in a **role**, and the role decides what you're allowed to do:
 
-Only the explore lane is confined. A `preToolUse` hook refuses writes outside
-`explore/` in the explore role, and `mlragents run explore` denies scheduler
-submission at launch. The exploit lane is deliberately unguarded, because a
-guardrail that fires during ordinary paper work is a guardrail that gets turned
-off.
-
-```bash
-mlragents init          # scaffold explore/, exploit/, paper/ and the adapter
-```
-
-See [Starting a new project](#starting-a-new-project) for the full walkthrough
-from an empty directory.
-
-## What it is
-
-Three layers, separated by how often they change and by what happens when they
-are wrong:
-
-| Layer | Lives in | Enforcement |
+| | For | Limits |
 |---|---|---|
-| Methodology — how to run an experiment, what to check before launching | `agents/` (4), `skills/` (7) | Persuasion. The model may disagree. |
-| Tools — run registry, Slurm queue and history, log triage | `src/mlragents/`, exposed over MCP | Tested facts. |
-| Guardrails — what must never happen | `hooks/` | Enforcement. The model gets no vote. |
+| `explore` | hunches and sanity checks | `explore/` only, no cluster jobs, cheap model |
+| `experiment` | runs that may reach the paper | unrestricted — this is the main lane |
+| `analysis` | figures, tables, macros | reads `exploit/`, writes `paper/` |
+| `paper` | prose and references | `.tex` and `.bib` only |
 
-The rule that decides the layer: anything whose violation would silently corrupt
-a paper belongs in a hook, not in a prompt.
-
-**The Python layer never infers what a repository means.** It uses universal
-substrates — git, Slurm, SQLite, the filesystem — or it shells out to a command
-the repository declared. Nothing is guessed from a directory name. See
-[`docs/mlragents-toml.md`](docs/mlragents-toml.md).
+Splitting explore from exploit isn't tidiness. **Exploration earns its speed by
+giving up the right to be cited.** Promoting a finding means *re-running* it
+under exploit-lane conditions — never copying results across, which would
+launder their provenance.
 
 ## Guardrails
 
-Four, and each one exists because its violation is *silent*: nothing downstream
-would report the damage.
+Four things are refused outright, because each one fails *silently* — nothing
+downstream would ever report the damage:
 
-| When | What is refused | Override |
+| If you… | …this happens | Override |
 |---|---|---|
-| `sbatch`/`srun`/`salloc` from a dirty tree | The submission | `MLRAGENTS_ALLOW_DIRTY=1` |
-| A write into a declared `paths.generated` tree | The edit; names the generator | change the generator |
-| A write outside a role's tree | The edit | run a different role |
-| A `.tex` file gains a numeric literal | The turn is blocked for review | use a macro |
+| `sbatch` from a dirty tree | refused — the run couldn't be reproduced | `MLRAGENTS_ALLOW_DIRTY=1` |
+| hand-edit a generated config | refused, naming the generator | fix the generator |
+| write outside your role's lane | refused | switch roles |
+| type a number into a `.tex` | flagged for review | use a macro |
 
-A successful submission is recorded automatically with the commit it ran from —
-something `sacct` does not know and no later scan can recover.
+Successful submissions are recorded with the commit they ran from — something
+`sacct` doesn't know and no later scan can recover.
 
-The gates that protect provenance apply to **every** role, because a dirty run
-is unusable to anyone whatever their intent. Role confinement is asymmetric:
-`experiment` is unconfined, because a guardrail that fires during ordinary
-paper-grade work is a guardrail that gets turned off.
+These are hooks, not instructions. The model doesn't get a vote.
 
-## Tools
+In practice it looks like this:
 
-Twelve, over MCP. Each is either universal or a passthrough to a command the
-project declared.
+```
+❯ launch the ablation grid
 
-| Tool | Answers |
-|---|---|
-| `runs_list`, `runs_get` | what has been run, and with what provenance |
-| `runs_provenance` | **may the paper cite this run**, and if not, what disqualifies it |
-| `lanes_list` | which trees exist and which of them is citable |
-| `jobs_queue`, `jobs_history` | what is queued, what finished, and how |
-| `jobs_logs` | the tails of a job's `.out`/`.err` plus the first error line |
-| `jobs_submit` | submit *and* record the commit in one step; refuses when it cannot |
-| `grid_diff` | do these two cells differ **only** along the declared axis |
-| `collect_results` | `commands.collect` |
-| `paper_build` | `commands.paper`, with errors, undefined refs and undefined citations extracted from the log |
-| `paper_audit_numbers` | which numbers in the `.tex` are not carried by a macro |
+✗ shell · sbatch exploit/scripts/ablation.sh
+  └ The working tree is dirty (src/model.py), so a job submitted now could not
+    be reproduced from any commit. Commit or stash first. If this run is
+    deliberately throwaway, set MLRAGENTS_ALLOW_DIRTY=1 for the session — but
+    its results are then not citable.
+```
 
-`jobs_submit` is listed only by the `experiment` agent. The other three roles
-launch with `--deny-tool=shell(sbatch:*)`, and a submitting tool in their
-allowlists would route straight around that.
-
-`grid_diff` is the ablation invariant made mechanical. Two cells that differ in
-two places support no claim about either, and that is not visible by reading
-two YAML files side by side.
-
-## Requirements
-
-| | Needed for | If absent |
-|---|---|---|
-| **GitHub Copilot CLI** | everything — this is a plugin, not a standalone tool | nothing loads |
-| **git** | all provenance. A run's commit is the thing that makes it citable | `jobs_submit` refuses; the session fact block omits the branch |
-| **`uv`** *(or `mlragents` on `PATH`)* | the hook and MCP shims, which run the Python package | hooks silently no-op; the MCP server fails to start |
-| Slurm — `sbatch`, `squeue`, `sacct` | only when `scheduler.kind = "slurm"` | set `kind = "none"`; the `jobs_*` tools and the dirty-tree gate stand down |
-| A LaTeX toolchain | only via `commands.paper` | `paper_build` reports the command's failure |
-
-Python is supplied by `uv` (≥ 3.11). Nothing else is required. Verified against
-Copilot CLI 1.0.83; the plugin uses agents, skills, hooks and MCP, so any
-version supporting those should work.
-
-**No VS Code extension is involved.** This is a terminal plugin for Copilot CLI;
-it has no editor component, and installing anything in VS Code does not affect
-it.
-
-**The LaTeX dependency is indirect.** This package never invokes a LaTeX engine.
-It runs whatever string you put in `commands.paper` — `latexmk -pdf main.tex`,
-`tectonic main.tex`, `bash scripts/build_paper.sh` — and parses the output. Any
-engine works, and if you do not write papers you can leave the key out; only
-`paper_build` needs it.
-
-`tracker.kind` is parsed and preserved, but **no tool acts on it yet**. W&B and
-MLflow are not currently required or used.
+Every refusal names the escape hatch, because a guardrail you can't get past
+when you genuinely mean it is a guardrail you'll turn off entirely.
 
 ## Install
 
-Two steps, because they install different things. The plugin gives Copilot the
-agents, skills, hooks and MCP tools. The CLI gives *you* `mlragents init` and
-`mlragents run`.
-
 ```bash
-# 1. the plugin (agents, skills, hooks, MCP server)
+# agents, skills, hooks and tools
 copilot plugin marketplace add ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 copilot plugin install mlragents@mlragents
 
-# 2. the command line tool
+# the mlragents command
 uv tool install git+ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 ```
 
-The SSH URLs are load-bearing: this repository is private, and the `owner/repo`
-shorthand resolves to an anonymous HTTPS `git clone`, which cannot authenticate
-(`fatal: could not read Username for 'https://github.com'`). The `ssh://` form
-uses your existing key.
+Both steps are needed: the plugin install puts nothing on your `PATH`. Check
+with `copilot plugin list` and `mlragents --version`.
 
-Step 2 is not optional in practice. A plugin install only copies the tree into
-Copilot's plugin directory; it puts nothing on your `PATH`, so `mlragents init`
-would be "command not found". Installing the CLI also makes the shims faster:
-they prefer `mlragents` on `PATH` and fall back to `uv run` otherwise.
+<details>
+<summary>Requirements, and updating</summary>
 
-Check both:
+You need **Copilot CLI**, **git** (provenance is git commits) and **`uv`**.
+Python comes from `uv`.
+
+Everything else is optional and depends on your project:
+
+- **Slurm** only if you set `scheduler.kind = "slurm"`. On a laptop use `"none"`.
+- **LaTeX** only if you build papers. This package never invokes an engine — it
+  runs the `commands.paper` string you provide and parses the output, so
+  `latexmk`, `tectonic` or a shell script all work.
+- **No VS Code extension is involved.** This is terminal-only.
+
+To update:
 
 ```bash
-copilot plugin list          # mlragents@mlragents
-mlragents --version          # 0.1.0
-```
-
-To update after a change to this repository:
-
-```bash
-copilot plugin marketplace update mlragents      # refresh the marketplace clone
-copilot plugin install mlragents@mlragents       # reinstall over the old copy
+copilot plugin marketplace update mlragents
+copilot plugin install mlragents@mlragents
 uv tool install --force git+ssh://git@github.com/kailen-hargenrader/MLRAgents.git
 ```
 
-Both steps are needed. `marketplace update` refreshes the marketplace's clone
-but does not touch the installed copy; `install` over an existing install
-replaces it without an uninstall.
+The private repo is why the URLs are `ssh://`: the `owner/repo` shorthand clones
+anonymously over HTTPS and can't authenticate.
 
-Direct installs from a local path still work but are deprecated, and they copy
-the directory as-is — including a `.venv` if one is present, which turned a 39M
-checkout into 170M. A marketplace install of the same tree is 401K.
+</details>
 
-The bundled MCP server runs through `uv`, so the first tool call after a fresh
-install pays ~8s to build the plugin's virtualenv. Subsequent calls are fast.
-
-## Starting a new project
-
-From an empty directory:
+## Quick start
 
 ```bash
-mkdir thermo-paper && cd thermo-paper
+mkdir my-paper && cd my-paper
 git init
-mlragents init --name thermo-paper
+mlragents init --name my-paper      # add --scheduler none if you have no cluster
 ```
 
-`init` is not a template. It writes only the structure the guardrails depend on:
-
-```
-explore/outputs/    explore/README.md    what this lane means, so the distinction
-exploit/outputs/    exploit/README.md    does not live only in your memory
-paper/
-.mlragents.toml     the adapter — the one file you must edit
-.gitignore          gains .mlragents/ (the registry is a cache, never committed)
-```
-
-The empty directories carry a `.gitkeep`, since git does not track directories
-and the layout would otherwise not survive a clone. On a laptop with no cluster,
-pass `--scheduler none`.
-
-**Then edit `.mlragents.toml`.** It is generated with an empty `[commands]`, and
-this is deliberate: nothing here guesses what your repository means. Declare how
-your project actually runs.
+That scaffolds `explore/`, `exploit/`, `paper/` and `.mlragents.toml`. Then tell
+it how your project runs — this is the one file you have to edit:
 
 ```toml
-[paths]
-paper = "paper"
-generated = ["exploit/configs"]      # add: hand-edits here are then refused
-
-[commands]                           # add: all four are optional
+[commands]
 train    = "uv run experiments/run.py --config-name={config}"
 collect  = "uv run scripts/collect_results.py"
 paper    = "latexmk -pdf -cd paper/main.tex"
 generate = "uv run scripts/make_configs.py"
+
+[paths]
+generated = ["exploit/configs"]      # hand-edits here are then refused
 ```
 
-Each command is a plain shell string run from the project root, so
-`cd paper && pdflatex -interaction=nonstopmode main.tex` is equally valid — this
-package parses the output and never cares which engine produced it.
+Every key is optional, and nothing is guessed — a tool that needs a command you
+haven't declared says so by name. See
+[`docs/mlragents-toml.md`](docs/mlragents-toml.md), or copy
+[`examples/surf-2026.mlragents.toml`](examples/surf-2026.mlragents.toml) (Hydra +
+uv + W&B + Slurm).
 
-A tool that needs an undeclared command fails by naming the missing key and the
-file to add it to; it never guesses a command that might work. Start from
-[`examples/surf-2026.mlragents.toml`](examples/surf-2026.mlragents.toml), a
-working adapter for a Hydra + uv + W&B + Slurm project, and see
-[`docs/mlragents-toml.md`](docs/mlragents-toml.md) for every key.
-
-Commit the scaffold, then work in a role:
+Then commit and start working:
 
 ```bash
 git add -A && git commit -m "mlragents structure"
-mlragents run explore
+
+mlragents run explore       # hunches
+mlragents run experiment    # paper-grade runs
+mlragents run analysis      # figures, tables, macros
+mlragents run paper         # prose
 ```
 
-The first thing you should see is the session fact block — project name, branch,
-whether the tree is dirty, and your actual cluster queue. If it is missing, the
-hooks are not loading; check `copilot plugin list` and that `uv` or `mlragents`
-is on `PATH`.
+Every session opens with the facts: your branch, whether the tree is dirty, and
+what's actually running on the cluster. If you don't see that block, the hooks
+aren't loading.
 
-Adopting an existing repository is the same, minus `git init`. Point the lanes
-at the directories you already have, and run `mlragents runs sync` once to
-populate the registry from your existing outputs.
+Plain `copilot` works too — the agents are there under `/agent`. You just lose
+the launch-time limits, since `mlragents run` is what applies them, and no hook
+can call back a job that's already queued.
 
-## Use
+**Already have a repository?** Same thing, minus `git init`. Point the lanes at
+the directories you already have and run `mlragents runs sync` once to index
+your existing outputs.
 
-```bash
-mlragents run explore      # cheap model, confined to explore/, no sbatch
-mlragents run experiment   # the exploit lane: paper-grade runs
-mlragents run analysis     # figures, tables and macros from finished runs
-mlragents run paper        # .tex and .bib only
-```
+## What the agents can look up
 
-Each launches Copilot CLI with that role's agent and limits, and exports
-`MLRAGENTS_ROLE` so the hooks know which role is running. The underlying command
-is `copilot --agent=mlragents:experiment`; the `mlragents:` prefix is required,
-since plugin agents are namespaced and `--agent=experiment` fails with "No such
-agent".
+Twelve tools, over MCP. The ones that matter most:
 
-You can also run plain `copilot` and switch with `/agent`, or let it delegate by
-intent. You lose the launch-time denials that way — `mlragents run` is what
-applies `--deny-tool`, and no hook can undo a job that has already been queued.
+| | |
+|---|---|
+| `runs_provenance` | **may the paper cite this run?** — and if not, exactly why |
+| `grid_diff` | do these two cells differ *only* along the axis you're testing? |
+| `jobs_submit` | submit and record the commit in one step; refuses if it can't |
+| `paper_build` | build, with errors and undefined citations pulled out of the log |
+| `paper_audit_numbers` | which numbers in the `.tex` aren't carried by a macro |
 
-Every session opens with a fact block: the current branch, whether the tree is
-dirty, and what is actually running on the cluster. It is injected by a
-`sessionStart` hook, so it is true regardless of what the model believes.
+Plus `runs_list`, `runs_get`, `lanes_list`, `jobs_queue`, `jobs_history`,
+`jobs_logs` and `collect_results`.
 
-```bash
-mlragents runs sync     # rebuild the registry from both lanes and sacct
-```
+`grid_diff` is the one people underestimate. Two configs that differ in two
+places support no claim about either — and that is genuinely hard to see reading
+two YAML files side by side.
 
-The registry is a cache and never a source of truth. Every field in it is
-recoverable from the lane outputs trees, git and `sacct`, which is what
-`runs sync` does. Run ids are lane-qualified — `exploit/ablation/softmax/01-00-00`
-— so a citation carries its lane and the two trees cannot collide.
+## More
 
-## Develop
-
-```bash
-uv run pytest -q
-copilot --plugin-dir ~/MLRAgents --agent=mlragents:experiment
-```
-
-`--plugin-dir` loads agents, skills and hooks live, with no install. It does
-**not** register the bundled MCP server, so pair it with
-`--additional-mcp-config @<file>` when changing MCP tools, or test through a
-real install.
-
-An agent's `tools` allowlist hides MCP tools unless they are named individually
-(`mlragents-jobs_queue`, not `mlragents`). An agent that gains a tool needs that
-tool added to its frontmatter, or it will silently be unable to do its job.
-
-## Verification
-
-Claims about the platform are checked against the platform, not against its
-documentation, and recorded in [`docs/verification/`](docs/verification/). Several
-documented or assumed behaviours turned out to be false; two bugs were found
-only by running against a real repository. Read those files before trusting a
-design decision that depends on CLI behaviour.
+- [`docs/mlragents-toml.md`](docs/mlragents-toml.md) — every configuration key
+- [`docs/developing.md`](docs/developing.md) — layout, design notes, contributing
+- [`docs/verification/`](docs/verification/) — what was tested against the real
+  CLI and a real cluster, including the assumptions that turned out to be wrong

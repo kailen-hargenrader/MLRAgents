@@ -12,6 +12,13 @@ import mlragents
 KNOWN_COMMANDS = {"hook", "runs", "init", "run"}
 
 
+def _roles_help() -> str:
+    """Name the roles that actually exist, so the help cannot drift from them."""
+    from mlragents.launcher import ROLES
+
+    return "one of: " + ", ".join(sorted(ROLES))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mlragents")
     parser.add_argument("--version", action="store_true", help="print version and exit")
@@ -35,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser(
         "run", help="start a Copilot session in a role, with that role's limits"
     )
-    run_parser.add_argument("role", help="explore or experiment")
+    run_parser.add_argument("role", help=_roles_help())
     run_parser.add_argument("-p", "--prompt", default=None)
     run_parser.add_argument("--print-argv", action="store_true")
     run_parser.add_argument("extra", nargs="*", help="passed through to copilot")
