@@ -89,3 +89,22 @@ def test_a_run_directory_is_not_mistaken_for_a_keepfile(tmp_path):
 
     init_project(tmp_path, name="p")
     assert discover_outputs(load(tmp_path / ".mlragents.toml")) == []
+
+
+def test_the_scaffolded_config_parses_and_commented_keys_are_valid(tmp_path):
+    """The commented examples are what users uncomment; they must be real TOML."""
+    import re
+    import tomllib
+
+    init_project(tmp_path, name="demo")
+    text = (tmp_path / ".mlragents.toml").read_text()
+    tomllib.loads(text)
+
+    # Uncomment only the lines that are a commented-out key/value pair.
+    kv = re.compile(r"^# ([A-Za-z_]+\s*=)")
+    uncommented = "\n".join(
+        line[2:] if kv.match(line) else line for line in text.splitlines()
+    )
+    parsed = tomllib.loads(uncommented)
+    assert "train" in parsed["commands"]
+    assert parsed["paths"]["generated"] == ["exploit/configs"]

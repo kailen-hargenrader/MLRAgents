@@ -45,6 +45,8 @@ python = "{python}"
 
 [paths]
 paper = "paper"
+# Directories written by a generator. Hand-edits to files here are refused, e.g.
+# generated = ["exploit/configs"]
 
 # Insight. Never cited.
 [explore]
@@ -64,7 +66,11 @@ log_dir = "slurm_logs"
 
 [commands]
 # Declare the commands this repository uses. Tools that need one and do not
-# find it fail with the name of the missing key.
+# find it fail with the name of the missing key. Uncomment and edit:
+# train    = "uv run experiments/run.py --config-name={{config}}"
+# collect  = "uv run scripts/collect_results.py"
+# paper    = "latexmk -pdf -cd paper/main.tex"
+# generate = "uv run scripts/make_configs.py"
 """
 
 
